@@ -81,7 +81,8 @@ static const struct woption long_options[] = {{L"export", no_argument, 'x'},
     _(L"%ls: successfully set universal '%ls'; but a global by that name shadows it\n")
 
 static int parse_cmd_opts(set_cmd_opts_t &opts, int *optind,  //!OCLINT(high ncss method)
-                          int argc, const wchar_t **argv, parser_t &parser, io_streams_t &streams) {
+                          int argc, const wchar_t **argv, const parser_t &parser,
+                          io_streams_t &streams) {
     const wchar_t *cmd = argv[0];
 
     int opt;
@@ -163,15 +164,16 @@ static int parse_cmd_opts(set_cmd_opts_t &opts, int *optind,  //!OCLINT(high ncs
             case '?': {
                 // Specifically detect `set -o` because people might be bringing over bashisms.
                 if (wcsncmp(argv[w.woptind - 1], L"-o", 2) == 0) {
-                    streams.err.append(
+                    streams.err()->append(
                         L"Fish does not have shell options. See `help fish-for-bash-users`.\n");
                     if (w.woptind < argc) {
                         if (wcscmp(argv[w.woptind], L"vi") == 0) {
                             // Tell the vi users how to get what they need.
-                            streams.err.append(L"To enable vi-mode, run `fish_vi_key_bindings`.\n");
+                            streams.err()->append(
+                                L"To enable vi-mode, run `fish_vi_key_bindings`.\n");
                         } else if (wcscmp(argv[w.woptind], L"ed") == 0) {
                             // This should be enough for make ed users feel at home
-                            streams.err.append(L"?\n?\n?\n");
+                            streams.err()->append(L"?\n?\n?\n");
                         }
                     }
                 }
@@ -189,18 +191,18 @@ static int parse_cmd_opts(set_cmd_opts_t &opts, int *optind,  //!OCLINT(high ncs
 }
 
 static int validate_cmd_opts(const wchar_t *cmd, const set_cmd_opts_t &opts, int argc,
-                             const wchar_t *argv[], parser_t &parser, io_streams_t &streams) {
+                             const wchar_t *argv[], const parser_t &parser, io_streams_t &streams) {
     // Can't query and erase or list.
     if (opts.query && (opts.erase || opts.list)) {
-        streams.err.append_format(BUILTIN_ERR_COMBO, cmd);
-        builtin_print_error_trailer(parser, streams.err, cmd);
+        streams.err()->append(format_string(BUILTIN_ERR_COMBO, cmd));
+        builtin_print_error_trailer(parser, *streams.err(), cmd);
         return STATUS_INVALID_ARGS;
     }
 
     // We can't both list and erase variables.
     if (opts.erase && opts.list) {
-        streams.err.append_format(BUILTIN_ERR_COMBO, cmd);
-        builtin_print_error_trailer(parser, streams.err, cmd);
+        streams.err()->append(format_string(BUILTIN_ERR_COMBO, cmd));
+        builtin_print_error_trailer(parser, *streams.err(), cmd);
         return STATUS_INVALID_ARGS;
     }
 
@@ -208,44 +210,44 @@ static int validate_cmd_opts(const wchar_t *cmd, const set_cmd_opts_t &opts, int
     if (opts.local + opts.function + opts.global + opts.universal > 1) {
         // ..unless we are erasing a variable, in which case we can erase from several in one go.
         if (!opts.erase) {
-            streams.err.append_format(BUILTIN_ERR_GLOCAL, cmd);
-            builtin_print_error_trailer(parser, streams.err, cmd);
+            streams.err()->append(format_string(BUILTIN_ERR_GLOCAL, cmd));
+            builtin_print_error_trailer(parser, *streams.err(), cmd);
             return STATUS_INVALID_ARGS;
         }
     }
 
     // Variables can only have one export status.
     if (opts.exportv && opts.unexport) {
-        streams.err.append_format(BUILTIN_ERR_EXPUNEXP, cmd);
-        builtin_print_error_trailer(parser, streams.err, cmd);
+        streams.err()->append(format_string(BUILTIN_ERR_EXPUNEXP, cmd));
+        builtin_print_error_trailer(parser, *streams.err(), cmd);
         return STATUS_INVALID_ARGS;
     }
 
     // Variables can only have one path status.
     if (opts.pathvar && opts.unpathvar) {
-        streams.err.append_format(BUILTIN_ERR_EXPUNEXP, cmd);
-        builtin_print_error_trailer(parser, streams.err, cmd);
+        streams.err()->append(format_string(BUILTIN_ERR_EXPUNEXP, cmd));
+        builtin_print_error_trailer(parser, *streams.err(), cmd);
         return STATUS_INVALID_ARGS;
     }
 
     // Trying to erase and (un)export at the same time doesn't make sense.
     if (opts.erase && (opts.exportv || opts.unexport)) {
-        streams.err.append_format(BUILTIN_ERR_COMBO, cmd);
-        builtin_print_error_trailer(parser, streams.err, cmd);
+        streams.err()->append(format_string(BUILTIN_ERR_COMBO, cmd));
+        builtin_print_error_trailer(parser, *streams.err(), cmd);
         return STATUS_INVALID_ARGS;
     }
 
     // The --show flag cannot be combined with any other flag.
     if (opts.show && (opts.local || opts.function || opts.global || opts.erase || opts.list ||
                       opts.exportv || opts.universal)) {
-        streams.err.append_format(BUILTIN_ERR_COMBO, cmd);
-        builtin_print_error_trailer(parser, streams.err, cmd);
+        streams.err()->append(format_string(BUILTIN_ERR_COMBO, cmd));
+        builtin_print_error_trailer(parser, *streams.err(), cmd);
         return STATUS_INVALID_ARGS;
     }
 
     if (argc == 0 && opts.erase) {
-        streams.err.append_format(BUILTIN_ERR_MISSING, cmd, argv[-1]);
-        builtin_print_error_trailer(parser, streams.err, cmd);
+        streams.err()->append(format_string(BUILTIN_ERR_MISSING, cmd, argv[-1]));
+        builtin_print_error_trailer(parser, *streams.err(), cmd);
         return STATUS_INVALID_ARGS;
     }
 
@@ -258,8 +260,8 @@ static void warn_if_uvar_shadows_global(const wchar_t *cmd, const set_cmd_opts_t
                                         const wcstring &dest, io_streams_t &streams,
                                         const parser_t &parser) {
     if (opts.universal && parser.is_interactive()) {
-        if (parser.vars().get(dest, ENV_GLOBAL).has_value()) {
-            streams.err.append_format(BUILTIN_SET_UVAR_ERR, cmd, dest.c_str());
+        if (parser.vars().getf(dest, ENV_GLOBAL)->has_value()) {
+            streams.err()->append(format_string(BUILTIN_SET_UVAR_ERR, cmd, dest.c_str()));
         }
     }
 }
@@ -271,25 +273,25 @@ static void handle_env_return(int retval, const wchar_t *cmd, const wcstring &ke
             break;
         }
         case ENV_PERM: {
-            streams.err.append_format(_(L"%ls: Tried to change the read-only variable '%ls'\n"),
-                                      cmd, key.c_str());
+            streams.err()->append(format_string(
+                _(L"%ls: Tried to change the read-only variable '%ls'\n"), cmd, key.c_str()));
             break;
         }
         case ENV_SCOPE: {
-            streams.err.append_format(
+            streams.err()->append(format_string(
                 _(L"%ls: Tried to modify the special variable '%ls' with the wrong scope\n"), cmd,
-                key.c_str());
+                key.c_str()));
             break;
         }
         case ENV_INVALID: {
-            streams.err.append_format(
+            streams.err()->append(format_string(
                 _(L"%ls: Tried to modify the special variable '%ls' to an invalid value\n"), cmd,
-                key.c_str());
+                key.c_str()));
             break;
         }
         case ENV_NOT_FOUND: {
-            streams.err.append_format(_(L"%ls: The variable '%ls' does not exist\n"), cmd,
-                                      key.c_str());
+            streams.err()->append(
+                format_string(_(L"%ls: The variable '%ls' does not exist\n"), cmd, key.c_str()));
             break;
         }
         default: {
@@ -302,7 +304,7 @@ static void handle_env_return(int retval, const wchar_t *cmd, const wcstring &ke
 /// description of the problem to stderr.
 static int env_set_reporting_errors(const wchar_t *cmd, const wcstring &key, int scope,
                                     std::vector<wcstring> list, io_streams_t &streams,
-                                    parser_t &parser) {
+                                    const parser_t &parser) {
     int retval = parser.set_var_and_fire(key, scope | ENV_USER, std::move(list));
     // If this returned OK, the parser already fired the event.
     handle_env_return(retval, cmd, key, streams);
@@ -318,7 +320,7 @@ struct split_var_t {
     std::vector<long> indexes{};  // list of requested indexes
 
     /// \return the number of elements in our variable, or 0 if missing.
-    long varsize() const { return var ? static_cast<long>(var->as_list().size()) : 0L; }
+    long varsize() const { return var ? static_cast<long>(var->as_list()->size()) : 0L; }
 };
 }  // namespace
 
@@ -337,7 +339,7 @@ static maybe_t<split_var_t> split_var_and_indexes(const wchar_t *arg, env_mode_f
     wcstring argstr{arg};
     auto open_bracket = argstr.find(L'[');
     res.varname.assign(arg, open_bracket == wcstring::npos ? argstr.size() : open_bracket);
-    res.var = vars.get(res.varname, mode);
+    res.var = vars.getf(res.varname, mode);
     if (open_bracket == wcstring::npos) {
         // Common case of no bracket.
         return res;
@@ -356,8 +358,8 @@ static maybe_t<split_var_t> split_var_and_indexes(const wchar_t *arg, env_mode_f
             const wchar_t *end = nullptr;
             l_ind = fish_wcstol(p, &end);
             if (errno > 0) {  // ignore errno == -1 meaning the int did not end with a '\0'
-                streams.err.append_format(_(L"%ls: Invalid index starting at '%ls'\n"), L"set",
-                                          res.varname.c_str());
+                streams.err()->append(format_string(_(L"%ls: Invalid index starting at '%ls'\n"),
+                                                    L"set", res.varname.c_str()));
                 return none();
             }
             p = end;
@@ -431,7 +433,7 @@ static env_mode_flags_t compute_scope(const set_cmd_opts_t &opts) {
 /// Print the names of all environment variables in the scope. It will include the values unless the
 /// `set --names` flag was used.
 static int builtin_set_list(const wchar_t *cmd, set_cmd_opts_t &opts, int argc,
-                            const wchar_t **argv, parser_t &parser, io_streams_t &streams) {
+                            const wchar_t **argv, const parser_t &parser, io_streams_t &streams) {
     UNUSED(cmd);
     UNUSED(argc);
     UNUSED(argv);
@@ -448,11 +450,11 @@ static int builtin_set_list(const wchar_t *cmd, set_cmd_opts_t &opts, int argc,
         if (!names_only) {
             wcstring val;
             if (opts.shorten_ok && key == L"history") {
-                std::shared_ptr<history_t> history =
-                    history_t::with_name(history_session_id(parser.vars()));
+                rust::Box<HistorySharedPtr> history =
+                    history_with_name(history_session_id(parser.vars()).c_str());
                 for (size_t i = 1; i < history->size() && val.size() < 64; i++) {
                     if (i > 1) val += L' ';
-                    val += expand_escape_string(history->item_at_index(i).str());
+                    val += expand_escape_string(*history->item_at_index(i)->str());
                 }
             } else {
                 auto var = parser.vars().get_unless_empty(key, compute_scope(opts));
@@ -474,7 +476,7 @@ static int builtin_set_list(const wchar_t *cmd, set_cmd_opts_t &opts, int argc,
         }
 
         out.push_back(L'\n');
-        streams.out.append(out);
+        streams.out()->append(out);
     }
 
     return STATUS_CMD_OK;
@@ -482,7 +484,7 @@ static int builtin_set_list(const wchar_t *cmd, set_cmd_opts_t &opts, int argc,
 
 // Query mode. Return the number of variables that do NOT exist out of the specified variables.
 static int builtin_set_query(const wchar_t *cmd, set_cmd_opts_t &opts, int argc,
-                             const wchar_t **argv, parser_t &parser, io_streams_t &streams) {
+                             const wchar_t **argv, const parser_t &parser, io_streams_t &streams) {
     int retval = 0;
     env_mode_flags_t scope = compute_scope(opts);
 
@@ -493,7 +495,7 @@ static int builtin_set_query(const wchar_t *cmd, set_cmd_opts_t &opts, int argc,
     for (int i = 0; i < argc; i++) {
         auto split = split_var_and_indexes(argv[i], scope, parser.vars(), streams);
         if (!split) {
-            builtin_print_error_trailer(parser, streams.err, cmd);
+            builtin_print_error_trailer(parser, *streams.err(), cmd);
             return STATUS_CMD_ERROR;
         }
 
@@ -541,33 +543,34 @@ static void show_scope(const wchar_t *var_name, int scope, io_streams_t &streams
     const wchar_t *exportv = var->exports() ? _(L"exported") : _(L"unexported");
     const wchar_t *pathvarv = var->is_pathvar() ? _(L" a path variable") : L"";
     std::vector<wcstring> vals = var->as_list();
-    streams.out.append_format(_(L"$%ls: set in %ls scope, %ls,%ls with %d elements"), var_name,
-                              scope_name, exportv, pathvarv, vals.size());
+    streams.out()->append(format_string(_(L"$%ls: set in %ls scope, %ls,%ls with %d elements"),
+                                        var_name, scope_name, exportv, pathvarv, vals.size()));
     // HACK: PWD can be set, depending on how you ask.
     // For our purposes it's read-only.
     if (env_var_t::flags_for(var_name) & env_var_t::flag_read_only) {
-        streams.out.append(_(L" (read-only)\n"));
+        streams.out()->append(_(L" (read-only)\n"));
     } else
-        streams.out.push(L'\n');
+        streams.out()->push(L'\n');
 
     for (size_t i = 0; i < vals.size(); i++) {
         if (vals.size() > 100) {
             if (i == 50) {
                 // try to print a mid-line ellipsis because we are eliding lines not words
-                streams.out.append(get_ellipsis_char() > 256 ? L"\u22EF" : get_ellipsis_str());
-                streams.out.push(L'\n');
+                streams.out()->append(get_ellipsis_char() > 256 ? L"\u22EF" : get_ellipsis_str());
+                streams.out()->push(L'\n');
             }
             if (i >= 50 && i < vals.size() - 50) continue;
         }
         const wcstring value = vals[i];
         const wcstring escaped_val = escape_string(value, ESCAPE_NO_PRINTABLES | ESCAPE_NO_QUOTED);
-        streams.out.append_format(_(L"$%ls[%d]: |%ls|\n"), var_name, i + 1, escaped_val.c_str());
+        streams.out()->append(
+            format_string(_(L"$%ls[%d]: |%ls|\n"), var_name, i + 1, escaped_val.c_str()));
     }
 }
 
 /// Show mode. Show information about the named variable(s).
 static int builtin_set_show(const wchar_t *cmd, const set_cmd_opts_t &opts, int argc,
-                            const wchar_t **argv, parser_t &parser, io_streams_t &streams) {
+                            const wchar_t **argv, const parser_t &parser, io_streams_t &streams) {
     UNUSED(opts);
     const auto &vars = parser.vars();
     auto inheriteds = env_get_inherited();
@@ -585,8 +588,8 @@ static int builtin_set_show(const wchar_t *cmd, const set_cmd_opts_t &opts, int 
             if (inherited != inheriteds.end()) {
                 const wcstring escaped_val =
                     escape_string(inherited->second, ESCAPE_NO_PRINTABLES | ESCAPE_NO_QUOTED);
-                streams.out.append_format(_(L"$%ls: originally inherited as |%ls|\n"), name.c_str(),
-                                          escaped_val.c_str());
+                streams.out()->append(format_string(_(L"$%ls: originally inherited as |%ls|\n"),
+                                                    name.c_str(), escaped_val.c_str()));
             }
         }
     } else {
@@ -594,15 +597,15 @@ static int builtin_set_show(const wchar_t *cmd, const set_cmd_opts_t &opts, int 
             const wchar_t *arg = argv[i];
 
             if (!valid_var_name(arg)) {
-                streams.err.append_format(BUILTIN_ERR_VARNAME, cmd, arg);
-                builtin_print_error_trailer(parser, streams.err, cmd);
+                streams.err()->append(format_string(BUILTIN_ERR_VARNAME, cmd, arg));
+                builtin_print_error_trailer(parser, *streams.err(), cmd);
                 return STATUS_INVALID_ARGS;
             }
 
             if (std::wcschr(arg, L'[')) {
-                streams.err.append_format(
-                    _(L"%ls: `set --show` does not allow slices with the var names\n"), cmd);
-                builtin_print_error_trailer(parser, streams.err, cmd);
+                streams.err()->append(format_string(
+                    _(L"%ls: `set --show` does not allow slices with the var names\n"), cmd));
+                builtin_print_error_trailer(parser, *streams.err(), cmd);
                 return STATUS_CMD_ERROR;
             }
 
@@ -613,8 +616,8 @@ static int builtin_set_show(const wchar_t *cmd, const set_cmd_opts_t &opts, int 
             if (inherited != inheriteds.end()) {
                 const wcstring escaped_val =
                     escape_string(inherited->second, ESCAPE_NO_PRINTABLES | ESCAPE_NO_QUOTED);
-                streams.out.append_format(_(L"$%ls: originally inherited as |%ls|\n"), arg,
-                                          escaped_val.c_str());
+                streams.out()->append(format_string(_(L"$%ls: originally inherited as |%ls|\n"),
+                                                    arg, escaped_val.c_str()));
             }
         }
     }
@@ -624,7 +627,7 @@ static int builtin_set_show(const wchar_t *cmd, const set_cmd_opts_t &opts, int 
 
 /// Erase a variable.
 static int builtin_set_erase(const wchar_t *cmd, set_cmd_opts_t &opts, int argc,
-                             const wchar_t **argv, parser_t &parser, io_streams_t &streams) {
+                             const wchar_t **argv, const parser_t &parser, io_streams_t &streams) {
     int ret = STATUS_CMD_OK;
     env_mode_flags_t scopes = compute_scope(opts);
     // `set -e` is allowed to be called with multiple scopes.
@@ -634,13 +637,14 @@ static int builtin_set_erase(const wchar_t *cmd, set_cmd_opts_t &opts, int argc,
         for (int i = 0; i < argc; i++) {
             auto split = split_var_and_indexes(argv[i], scope, parser.vars(), streams);
             if (!split) {
-                builtin_print_error_trailer(parser, streams.err, cmd);
+                builtin_print_error_trailer(parser, *streams.err(), cmd);
                 return STATUS_CMD_ERROR;
             }
 
             if (!valid_var_name(split->varname)) {
-                streams.err.append_format(BUILTIN_ERR_VARNAME, cmd, split->varname.c_str());
-                builtin_print_error_trailer(parser, streams.err, cmd);
+                streams.err()->append(
+                    format_string(BUILTIN_ERR_VARNAME, cmd, split->varname.c_str()));
+                builtin_print_error_trailer(parser, *streams.err(), cmd);
                 return STATUS_INVALID_ARGS;
             }
 
@@ -735,10 +739,10 @@ static std::vector<wcstring> new_var_values_by_index(const split_var_t &split, i
 
 /// Set a variable.
 static int builtin_set_set(const wchar_t *cmd, set_cmd_opts_t &opts, int argc, const wchar_t **argv,
-                           parser_t &parser, io_streams_t &streams) {
+                           const parser_t &parser, io_streams_t &streams) {
     if (argc == 0) {
-        streams.err.append_format(BUILTIN_ERR_MIN_ARG_COUNT1, cmd, 1);
-        builtin_print_error_trailer(parser, streams.err, cmd);
+        streams.err()->append(format_string(BUILTIN_ERR_MIN_ARG_COUNT1, cmd, 1));
+        builtin_print_error_trailer(parser, *streams.err(), cmd);
         return STATUS_INVALID_ARGS;
     }
 
@@ -749,20 +753,21 @@ static int builtin_set_set(const wchar_t *cmd, set_cmd_opts_t &opts, int argc, c
 
     auto split = split_var_and_indexes(var_expr, scope, parser.vars(), streams);
     if (!split) {
-        builtin_print_error_trailer(parser, streams.err, cmd);
+        builtin_print_error_trailer(parser, *streams.err(), cmd);
         return STATUS_INVALID_ARGS;
     }
 
     // Is the variable valid?
     if (!valid_var_name(split->varname)) {
-        streams.err.append_format(BUILTIN_ERR_VARNAME, cmd, split->varname.c_str());
+        streams.err()->append(format_string(BUILTIN_ERR_VARNAME, cmd, split->varname.c_str()));
         auto pos = split->varname.find(L'=');
         if (pos != wcstring::npos) {
-            streams.err.append_format(L"%ls: Did you mean `set %ls %ls`?", cmd,
-                                      escape_string(split->varname.substr(0, pos)).c_str(),
-                                      escape_string(split->varname.substr(pos + 1)).c_str());
+            streams.err()->append(
+                format_string(L"%ls: Did you mean `set %ls %ls`?", cmd,
+                              escape_string(split->varname.substr(0, pos)).c_str(),
+                              escape_string(split->varname.substr(pos + 1)).c_str()));
         }
-        builtin_print_error_trailer(parser, streams.err, cmd);
+        builtin_print_error_trailer(parser, *streams.err(), cmd);
         return STATUS_INVALID_ARGS;
     }
 
@@ -771,23 +776,23 @@ static int builtin_set_set(const wchar_t *cmd, set_cmd_opts_t &opts, int argc, c
         // Indexes must be > 0. (Note split_var_and_indexes negates negative values).
         for (long v : split->indexes) {
             if (v <= 0) {
-                streams.err.append_format(BUILTIN_SET_ARRAY_BOUNDS_ERR, cmd);
+                streams.err()->append(format_string(BUILTIN_SET_ARRAY_BOUNDS_ERR, cmd));
                 return STATUS_INVALID_ARGS;
             }
         }
 
         // Append and prepend are disallowed.
         if (opts.append || opts.prepend) {
-            streams.err.append_format(
-                L"%ls: Cannot use --append or --prepend when assigning to a slice", cmd);
-            builtin_print_error_trailer(parser, streams.err, cmd);
+            streams.err()->append(format_string(
+                L"%ls: Cannot use --append or --prepend when assigning to a slice", cmd));
+            builtin_print_error_trailer(parser, *streams.err(), cmd);
             return STATUS_INVALID_ARGS;
         }
 
         // Argument count and index count must agree.
         if (split->indexes.size() != static_cast<size_t>(argc)) {
-            streams.err.append_format(BUILTIN_SET_MISMATCHED_ARGS, cmd, split->indexes.size(),
-                                      argc);
+            streams.err()->append(
+                format_string(BUILTIN_SET_MISMATCHED_ARGS, cmd, split->indexes.size(), argc));
             return STATUS_INVALID_ARGS;
         }
     }
@@ -812,7 +817,7 @@ static int builtin_set_set(const wchar_t *cmd, set_cmd_opts_t &opts, int argc, c
 }
 
 /// The set builtin creates, updates, and erases (removes, deletes) variables.
-maybe_t<int> builtin_set(parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
+maybe_t<int> builtin_set(const parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
     const wchar_t *cmd = argv[0];
     int argc = builtin_count_args(argv);
     set_cmd_opts_t opts;

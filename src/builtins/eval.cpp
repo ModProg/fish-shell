@@ -16,7 +16,7 @@
 #include "../wutil.h"  // IWYU pragma: keep
 
 /// Implementation of eval builtin.
-maybe_t<int> builtin_eval(parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
+maybe_t<int> builtin_eval(const parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
     int argc = builtin_count_args(argv);
     if (argc <= 1) {
         return STATUS_CMD_OK;
@@ -74,11 +74,11 @@ maybe_t<int> builtin_eval(parser_t &parser, io_streams_t &streams, const wchar_t
     ios.clear();
     if (stdout_fill) {
         separated_buffer_t output = io_bufferfill_t::finish(std::move(stdout_fill));
-        streams.out.append_narrow_buffer(std::move(output));
+        streams.out()->append_narrow_buffer(std::move(output));
     }
     if (stderr_fill) {
         separated_buffer_t errput = io_bufferfill_t::finish(std::move(stderr_fill));
-        streams.err.append_narrow_buffer(std::move(errput));
+        streams.err()->append_narrow_buffer(std::move(errput));
     }
     return status;
 }

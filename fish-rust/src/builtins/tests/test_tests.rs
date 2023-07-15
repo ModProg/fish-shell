@@ -1,12 +1,13 @@
-use crate::builtins::shared::{io_streams_t, STATUS_CMD_OK, STATUS_INVALID_ARGS};
+use crate::builtins::shared::{STATUS_CMD_OK, STATUS_INVALID_ARGS};
 use crate::builtins::test::test as builtin_test;
 
-use crate::ffi::{make_null_io_streams_ffi, parser_t};
+use crate::io::{IoStreams, NullOutputStream};
+use crate::parser::Parser;
 use crate::wchar::{widestrs, WString, L};
 use crate::wchar_ext::ToWString;
 
 fn run_one_test_test_mbracket(expected: i32, lst: &[&str], bracket: bool) -> bool {
-    let parser: &mut parser_t = unsafe { &mut *parser_t::principal_parser_ffi() };
+    let parser = Parser::principal_parser();
     let mut argv = Vec::new();
     if bracket {
         argv.push(L!("[").to_owned());
@@ -23,8 +24,10 @@ fn run_one_test_test_mbracket(expected: i32, lst: &[&str], bracket: bool) -> boo
     // Convert to &[&wstr].
     let mut argv = argv.iter().map(|s| s.as_ref()).collect::<Vec<_>>();
 
-    let mut streams_ffi = make_null_io_streams_ffi();
-    let mut streams = io_streams_t::new(streams_ffi.as_mut().unwrap());
+    let mut out = NullOutputStream::new();
+    let mut err = NullOutputStream::new();
+    let mut streams = IoStreams::new(&mut out, &mut err);
+
     let result: Option<i32> = builtin_test(parser, &mut streams, &mut argv);
 
     if result != Some(expected) {
@@ -50,9 +53,11 @@ fn run_test_test(expected: i32, lst: &[&str]) -> bool {
 #[widestrs]
 fn test_test_brackets() {
     // Ensure [ knows it needs a ].
-    let parser: &mut parser_t = unsafe { &mut *parser_t::principal_parser_ffi() };
-    let mut streams_ffi = make_null_io_streams_ffi();
-    let mut streams = io_streams_t::new(streams_ffi.as_mut().unwrap());
+    let parser = Parser::principal_parser();
+
+    let mut out = NullOutputStream::new();
+    let mut err = NullOutputStream::new();
+    let mut streams = IoStreams::new(&mut out, &mut err);
 
     let args1 = &mut ["["L, "foo"L];
     assert_eq!(

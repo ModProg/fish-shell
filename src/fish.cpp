@@ -222,7 +222,7 @@ static struct config_paths_t determine_config_directory_paths(const char *argv0)
 }
 
 // Source the file config.fish in the given directory.
-static void source_config_in_directory(parser_t &parser, const wcstring &dir) {
+static void source_config_in_directory(const parser_t &parser, const wcstring &dir) {
     // If the config.fish file doesn't exist or isn't readable silently return. Fish versions up
     // thru 2.2.0 would instead try to source the file with stderr redirected to /dev/null to deal
     // with that possibility.
@@ -241,13 +241,13 @@ static void source_config_in_directory(parser_t &parser, const wcstring &dir) {
 
     const wcstring cmd = L"builtin source " + escaped_pathname;
 
-    parser.libdata().within_fish_init = true;
-    parser.eval(cmd, io_chain_t());
-    parser.libdata().within_fish_init = false;
+    parser.libdata_pods_mut().within_fish_init = true;
+    parser.eval(cmd, *new_io_chain());
+    parser.libdata_pods_mut().within_fish_init = false;
 }
 
 /// Parse init files. exec_path is the path of fish executable as determined by argv[0].
-static void read_init(parser_t &parser, const struct config_paths_t &paths) {
+static void read_init(const parser_t &parser, const struct config_paths_t &paths) {
     source_config_in_directory(parser, paths.data);
     source_config_in_directory(parser, paths.sysconf);
 
@@ -260,7 +260,7 @@ static void read_init(parser_t &parser, const struct config_paths_t &paths) {
     }
 }
 
-static int run_command_list(parser_t &parser, const std::vector<std::string> &cmds,
+static int run_command_list(const parser_t &parser, const std::vector<std::string> &cmds,
                             const io_chain_t &io) {
     int retval = STATUS_CMD_OK;
     for (const auto &cmd : cmds) {
@@ -276,11 +276,10 @@ static int run_command_list(parser_t &parser, const std::vector<std::string> &cm
             // Construct a parsed source ref.
             // Be careful to transfer ownership, this could be a very large string.
             auto ps = new_parsed_source_ref(cmd_wcs, *ast);
-            parser.eval_parsed_source(*ps, io, {}, block_type_t::top);
+            parser.eval_parsed_source(*ps, io);
             retval = STATUS_CMD_OK;
         } else {
-            wcstring sb;
-            parser.get_backtrace(cmd_wcs, *errors, sb);
+            wcstring sb = *parser.get_backtrace(cmd_wcs, *errors);
             std::fwprintf(stderr, L"%ls", sb.c_str());
             // XXX: Why is this the return for "unknown command"?
             retval = STATUS_CMD_UNKNOWN;
@@ -484,7 +483,7 @@ int main(int argc, char **argv) {
     if (opts.is_login) mark_login();
     if (opts.no_exec) mark_no_exec();
     if (opts.is_interactive_session) set_interactive_session(true);
-    if (opts.enable_private_mode) start_private_mode(env_stack_t::globals());
+    if (opts.enable_private_mode) start_private_mode(env_stack_globals());
 
     // Only save (and therefore restore) the fg process group if we are interactive. See issues
     // #197 and #1002.
@@ -502,8 +501,8 @@ int main(int argc, char **argv) {
     // Set features early in case other initialization depends on them.
     // Start with the ones set in the environment, then those set on the command line (so the
     // command line takes precedence).
-    if (auto features_var = env_stack_t::globals().get(L"fish_features")) {
-        for (const wcstring &s : features_var->as_list()) {
+    if (auto features_var = env_stack_globals().get(L"fish_features")) {
+        for (const wcstring &s : features_var->as_list()->vals) {
             feature_set_from_string(s.c_str());
         }
     }
@@ -512,18 +511,19 @@ int main(int argc, char **argv) {
     misc_init();
     reader_init();
 
-    parser_t &parser = parser_t::principal_parser();
+    auto parser_box = parser_principal_parser();
+    auto &parser = parser_box->deref();
     parser.set_syncs_uvars(!opts.no_config);
 
     if (!opts.no_exec && !opts.no_config) {
-        read_init(parser, paths);
+        read_init(parser_box->deref(), paths);
     }
 
     if (is_interactive_session() && opts.no_config && !opts.no_exec) {
         // If we have no config, we default to the default key bindings.
         parser.vars().set_one(L"fish_key_bindings", ENV_UNEXPORT, L"fish_default_key_bindings");
         if (function_exists(L"fish_default_key_bindings", parser)) {
-            run_command_list(parser, {"fish_default_key_bindings"}, {});
+            run_command_list(parser, {"fish_default_key_bindings"}, *new_io_chain());
         }
     }
 
@@ -531,7 +531,7 @@ int main(int argc, char **argv) {
     term_copy_modes();
 
     // Stomp the exit status of any initialization commands (issue #635).
-    parser.set_last_statuses(statuses_t::just(STATUS_CMD_OK));
+    parser.vars().set_last_statuses(STATUS_CMD_OK, 0, {});
 
     // If we're profiling startup to a separate file, write it now.
     if (!opts.profile_startup_output.empty() &&
@@ -547,7 +547,7 @@ int main(int argc, char **argv) {
 
     // Run post-config commands specified as arguments, if any.
     if (!opts.postconfig_cmds.empty()) {
-        res = run_command_list(parser, opts.postconfig_cmds, {});
+        res = run_command_list(parser, opts.postconfig_cmds, *new_io_chain());
     }
 
     // Clear signals in case we were interrupted (#9024).
@@ -557,8 +557,9 @@ int main(int argc, char **argv) {
         // Run the commands specified as arguments, if any.
         if (get_login()) {
             // Do something nasty to support OpenSUSE assuming we're bash. This may modify cmds.
-            fish_xdm_login_hack_hack_hack_hack(&opts.batch_cmds, argc - my_optind,
-                                               argv + my_optind);
+            // todo!()
+            // fish_xdm_login_hack_hack_hack_hack(&opts.batch_cmds, argc - my_optind,
+            //                                    argv + my_optind);
         }
 
         // Pass additional args as $argv.
@@ -568,15 +569,15 @@ int main(int argc, char **argv) {
             list.push_back(str2wcstring(*ptr));
         }
         parser.vars().set(L"argv", ENV_DEFAULT, std::move(list));
-        res = run_command_list(parser, opts.batch_cmds, {});
-        parser.libdata().exit_current_script = false;
+        res = run_command_list(parser, opts.batch_cmds, *new_io_chain());
+        parser.libdata_pods_mut().exit_current_script = false;
     } else if (my_optind == argc) {
         // Implicitly interactive mode.
         if (opts.no_exec && isatty(STDIN_FILENO)) {
             FLOGF(error, L"no-execute mode enabled and no script given. Exiting");
             return EXIT_FAILURE;  // above line should always exit
         }
-        res = reader_read(parser, STDIN_FILENO, {});
+        res = reader_read(parser, STDIN_FILENO, *new_io_chain());
     } else {
         const char *file = *(argv + (my_optind++));
         autoclose_fd_t fd(open_cloexec(file, O_RDONLY));
@@ -590,17 +591,18 @@ int main(int argc, char **argv) {
             }
             parser.vars().set(L"argv", ENV_DEFAULT, std::move(list));
 
-            auto &ld = parser.libdata();
+            // auto &ld = parser.libdata();
             filename_ref_t rel_filename = std::make_shared<wcstring>(str2wcstring(file));
-            scoped_push<filename_ref_t> filename_push{&ld.current_filename, rel_filename};
-            res = reader_read(parser, fd.fd(), {});
+            // todo!
+            //  scoped_push<filename_ref_t> filename_push{&ld.current_filename, rel_filename};
+            res = reader_read(parser, fd.fd(), *new_io_chain());
             if (res) {
                 FLOGF(warning, _(L"Error while reading file %ls\n"), rel_filename->c_str());
             }
         }
     }
 
-    int exit_status = res ? STATUS_CMD_UNKNOWN : parser.get_last_status();
+    int exit_status = res ? STATUS_CMD_UNKNOWN : parser.vars().get_last_statuses()->get_status();
     event_fire(parser, *new_event_process_exit(getpid(), exit_status));
 
     // Trigger any exit handlers.

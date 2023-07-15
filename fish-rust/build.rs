@@ -4,6 +4,22 @@ use std::error::Error;
 fn main() {
     cc::Build::new().file("src/compat.c").compile("libcompat.a");
 
+    if cc::Build::new()
+        .file("src/cfg/w_exitcode.cpp")
+        .try_compile("/dev/null")
+        .is_ok()
+    {
+        println!("cargo:rustc-cfg=HAVE_WAITSTATUS_SIGNAL_RET");
+    }
+
+    if cc::Build::new()
+        .file("src/cfg/spawn.c")
+        .try_compile("/dev/null")
+        .is_ok()
+    {
+        println!("cargo:rustc-cfg=FISH_USE_POSIX_SPAWN");
+    }
+
     let rust_dir = std::env::var("CARGO_MANIFEST_DIR").expect("Env var CARGO_MANIFEST_DIR missing");
     let target_dir =
         std::env::var("FISH_RUST_TARGET_DIR").unwrap_or(format!("{}/{}", rust_dir, "target/"));
@@ -40,12 +56,14 @@ fn main() {
     let source_files = vec![
         "src/abbrs.rs",
         "src/ast.rs",
-        "src/builtins/shared.rs",
-        "src/builtins/function.rs",
         "src/common.rs",
-        "src/env/env_ffi.rs",
+        "src/complete.rs",
         "src/env_dispatch.rs",
+        "src/env/env_ffi.rs",
+        "src/env_universal_common.rs",
         "src/event.rs",
+        "src/exec.rs",
+        "src/expand.rs",
         "src/fd_monitor.rs",
         "src/fd_readable_set.rs",
         "src/fds.rs",
@@ -55,14 +73,20 @@ fn main() {
         "src/function.rs",
         "src/future_feature_flags.rs",
         "src/highlight.rs",
+        "src/history.rs",
+        "src/io.rs",
         "src/job_group.rs",
         "src/kill.rs",
         "src/null_terminated_array.rs",
+        "src/operation_context.rs",
         "src/output.rs",
         "src/parse_constants.rs",
+        "src/parser.rs",
         "src/parse_tree.rs",
         "src/parse_util.rs",
         "src/print_help.rs",
+        "src/proc.rs",
+        "src/reader.rs",
         "src/redirection.rs",
         "src/signal.rs",
         "src/smoke.rs",
@@ -73,7 +97,7 @@ fn main() {
         "src/topic_monitor.rs",
         "src/trace.rs",
         "src/util.rs",
-        "src/wait_handle.rs",
+        "src/wildcard.rs",
     ];
     cxx_build::bridges(&source_files)
         .flag_if_supported("-std=c++11")

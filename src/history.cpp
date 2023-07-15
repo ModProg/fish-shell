@@ -1507,7 +1507,7 @@ bool history_t::search(history_search_type_t search_type, const std::vector<wcst
             collected.push_back(std::move(formatted_record));
         } else {
             // We can output this immediately.
-            if (!streams.out.append(formatted_record)) {
+            if (!streams.out()->append(formatted_record)) {
                 // This can happen if the user hit Ctrl-C to abort (maybe after the first page?).
                 output_error = true;
                 return false;
@@ -1523,7 +1523,8 @@ bool history_t::search(history_search_type_t search_type, const std::vector<wcst
     } else {
         for (const wcstring &search_string : search_args) {
             if (search_string.empty()) {
-                streams.err.append_format(L"Searching for the empty string isn't allowed");
+                streams.err()->append(
+                    format_string(L"Searching for the empty string isn't allowed"));
                 return false;
             }
             do_1_history_search(this, search_type, search_string, case_sensitive, func,
@@ -1533,7 +1534,7 @@ bool history_t::search(history_search_type_t search_type, const std::vector<wcst
 
     // Output any items we collected (which only happens in reverse).
     for (auto iter = collected.rbegin(); !output_error && iter != collected.rend(); ++iter) {
-        if (!streams.out.append(*iter)) {
+        if (!streams.out()->append(*iter)) {
             // Don't force an error if output was aborted (typically via Ctrl-C/SIGINT); just don't
             // try writing any more.
             output_error = true;

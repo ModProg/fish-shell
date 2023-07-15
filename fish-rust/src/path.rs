@@ -16,7 +16,7 @@ use errno::{errno, set_errno, Errno};
 use libc::{EACCES, EAGAIN, ENOENT, ENOTDIR, F_OK, X_OK};
 use once_cell::sync::Lazy;
 use std::ffi::OsStr;
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::prelude::MetadataExt;
 use widestring_suffix::widestrs;
@@ -205,8 +205,8 @@ static DEFAULT_PATH: Lazy<[WString; 3]> = Lazy::new(|| {
 /// If no candidate path is found, path will be empty and err will be set to ENOENT.
 /// Possible err values are taken from access().
 pub struct GetPathResult {
-    err: Option<Errno>,
-    path: WString,
+    pub err: Option<Errno>,
+    pub path: WString,
 }
 impl GetPathResult {
     fn new(err: Option<Errno>, path: WString) -> Self {
@@ -222,14 +222,18 @@ pub fn path_try_get_path(cmd: &wstr, vars: &dyn Environment) -> GetPathResult {
     }
 }
 
-fn path_is_executable(path: &wstr) -> bool {
-    let narrow = wcs2zstring(path);
-    if unsafe { libc::access(narrow.as_ptr(), X_OK) } != 0 {
-        return false;
+fn path_check_executable(path: &wstr) -> Result<(), std::io::Error> {
+    if waccess(path, X_OK) != 0 {
+        return Err(std::io::Error::last_os_error());
     }
-    let narrow: Vec<u8> = narrow.into();
-    let Ok(md) = std::fs::metadata(OsStr::from_bytes(&narrow)) else { return false; };
-    md.is_file()
+
+    let buff = wstat(path)?;
+
+    if buff.file_type().is_file() {
+        Ok(())
+    } else {
+        Err(ErrorKind::PermissionDenied.into())
+    }
 }
 
 /// Return all the paths that match the given command.
@@ -239,7 +243,7 @@ pub fn path_get_paths(cmd: &wstr, vars: &dyn Environment) -> Vec<WString> {
 
     // If the command has a slash, it must be an absolute or relative path and thus we don't bother
     // looking for matching commands in the PATH var.
-    if cmd.contains('/') && path_is_executable(cmd) {
+    if cmd.contains('/') && path_check_executable(cmd).is_ok() {
         paths.push(cmd.to_owned());
         return paths;
     }
@@ -251,7 +255,7 @@ pub fn path_get_paths(cmd: &wstr, vars: &dyn Environment) -> Vec<WString> {
         }
         let mut path = path.clone();
         append_path_component(&mut path, cmd);
-        if path_is_executable(&path) {
+        if path_check_executable(&path).is_ok() {
             paths.push(path);
         }
     }
@@ -342,7 +346,7 @@ pub fn path_get_cdpath(dir: &wstr, wd: &wstr, vars: &dyn Environment) -> Option<
     let paths = path_apply_cdpath(dir, wd, vars);
 
     for a_dir in paths {
-        if let Some(md) = wstat(&a_dir) {
+        if let Ok(md) = wstat(&a_dir) {
             if md.is_dir() {
                 return Some(a_dir);
             }
@@ -520,7 +524,7 @@ pub fn paths_are_same_file(path1: &wstr, path2: &wstr) -> bool {
     }
 
     match (wstat(path1), wstat(path2)) {
-        (Some(s1), Some(s2)) => s1.ino() == s2.ino() && s1.dev() == s2.dev(),
+        (Ok(s1), Ok(s2)) => s1.ino() == s2.ino() && s1.dev() == s2.dev(),
         _ => false,
     }
 }
@@ -630,18 +634,18 @@ fn create_directory(d: &wstr) -> bool {
     let mut md;
     loop {
         md = wstat(d);
-        if md.is_none() && errno().0 != EAGAIN {
+        if md.is_ok() || errno().0 != EAGAIN {
             break;
         }
     }
     match md {
-        Some(md) => {
+        Ok(md) => {
             if md.is_dir() {
                 return true;
             }
         }
-        None => {
-            if errno().0 == ENOENT {
+        Err(err) => {
+            if err.kind() == ErrorKind::NotFound {
                 let dir: &wstr = wdirname(d);
                 if create_directory(dir) && wmkdir(d, 0o700) == 0 {
                     return true;

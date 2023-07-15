@@ -26,7 +26,7 @@
 
 /// The  source builtin, sometimes called `.`. Evaluates the contents of a file in the current
 /// context.
-maybe_t<int> builtin_source(parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
+maybe_t<int> builtin_source(const parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
     const wchar_t *cmd = argv[0];
     int argc = builtin_count_args(argv);
     help_only_cmd_opts_t opts;
@@ -51,7 +51,7 @@ maybe_t<int> builtin_source(parser_t &parser, io_streams_t &streams, const wchar
 
     if (argc == optind || std::wcscmp(argv[optind], L"-") == 0) {
         if (streams.stdin_fd < 0) {
-            streams.err.append_format(_(L"%ls: stdin is closed\n"), cmd);
+            streams.err()->append(format_string(_(L"%ls: stdin is closed\n"), cmd));
             return STATUS_CMD_ERROR;
         }
         // Either a bare `source` which means to implicitly read from stdin or an explicit `-`.
@@ -65,8 +65,8 @@ maybe_t<int> builtin_source(parser_t &parser, io_streams_t &streams, const wchar
         opened_fd = autoclose_fd_t(wopen_cloexec(argv[optind], O_RDONLY));
         if (!opened_fd.valid()) {
             wcstring esc = escape_string(argv[optind]);
-            streams.err.append_format(_(L"%ls: Error encountered while sourcing file '%ls':\n"),
-                                      cmd, esc.c_str());
+            streams.err()->append(format_string(
+                _(L"%ls: Error encountered while sourcing file '%ls':\n"), cmd, esc.c_str()));
             builtin_wperror(cmd, streams);
             return STATUS_CMD_ERROR;
         }
@@ -74,15 +74,16 @@ maybe_t<int> builtin_source(parser_t &parser, io_streams_t &streams, const wchar
         fd = opened_fd.fd();
         if (fstat(fd, &buf) == -1) {
             wcstring esc = escape_string(argv[optind]);
-            streams.err.append_format(_(L"%ls: Error encountered while sourcing file '%ls':\n"),
-                                      cmd, esc.c_str());
+            streams.err()->append(format_string(
+                _(L"%ls: Error encountered while sourcing file '%ls':\n"), cmd, esc.c_str()));
             builtin_wperror(L"source", streams);
             return STATUS_CMD_ERROR;
         }
 
         if (!S_ISREG(buf.st_mode)) {
             wcstring esc = escape_string(argv[optind]);
-            streams.err.append_format(_(L"%ls: '%ls' is not a file\n"), cmd, esc.c_str());
+            streams.err()->append(
+                format_string(_(L"%ls: '%ls' is not a file\n"), cmd, esc.c_str()));
             return STATUS_CMD_ERROR;
         }
 
@@ -111,8 +112,8 @@ maybe_t<int> builtin_source(parser_t &parser, io_streams_t &streams, const wchar
 
     if (retval != STATUS_CMD_OK) {
         wcstring esc = escape_string(*func_filename);
-        streams.err.append_format(_(L"%ls: Error while reading file '%ls'\n"), cmd,
-                                  esc == L"-" ? L"<stdin>" : esc.c_str());
+        streams.err()->append(format_string(_(L"%ls: Error while reading file '%ls'\n"), cmd,
+                                             esc == L"-" ? L"<stdin>" : esc.c_str()));
     } else {
         retval = parser.get_last_status();
     }

@@ -14,10 +14,9 @@
 #include "../fallback.h"  // IWYU pragma: keep
 #include "../io.h"
 #include "../maybe.h"
+#include "../parser.h"
 #include "../wgetopt.h"
 #include "../wutil.h"  // IWYU pragma: keep
-
-class parser_t;
 
 /// Struct describing a resource limit.
 struct resource_t {
@@ -108,9 +107,9 @@ static void print(int resource, int hard, io_streams_t &streams) {
     rlim_t l = get(resource, hard);
 
     if (l == RLIM_INFINITY)
-        streams.out.append(L"unlimited\n");
+        streams.out()->append(L"unlimited\n");
     else
-        streams.out.append_format(L"%lu\n", l / get_multiplier(resource));
+        streams.out()->append(format_string(L"%lu\n", l / get_multiplier(resource)));
 }
 
 /// Print values of all resource limits.
@@ -133,13 +132,14 @@ static void print_all(int hard, io_streams_t &streams) {
                  ? L"(seconds, "
                  : (get_multiplier(resource_arr[i].resource) == 1 ? L"(" : L"(kB, "));
 
-        streams.out.append_format(L"%-*ls %10ls-%lc) ", w, resource_arr[i].desc, unit,
-                                  resource_arr[i].switch_char);
+        streams.out()->append(format_string(L"%-*ls %10ls-%lc) ", w, resource_arr[i].desc, unit,
+                                             resource_arr[i].switch_char));
 
         if (l == RLIM_INFINITY) {
-            streams.out.append(L"unlimited\n");
+            streams.out()->append(L"unlimited\n");
         } else {
-            streams.out.append_format(L"%lu\n", l / get_multiplier(resource_arr[i].resource));
+            streams.out()->append(
+                format_string(L"%lu\n", l / get_multiplier(resource_arr[i].resource)));
         }
     }
 }
@@ -175,9 +175,9 @@ static int set_limit(int resource, int hard, int soft, rlim_t value, io_streams_
 
     if (setrlimit(resource, &ls)) {
         if (errno == EPERM) {
-            streams.err.append_format(
-                L"ulimit: Permission denied when changing resource of type '%ls'\n",
-                get_desc(resource));
+            streams.err()->append(
+                format_string(L"ulimit: Permission denied when changing resource of type '%ls'\n",
+                               get_desc(resource)));
         } else {
             builtin_wperror(L"ulimit", streams);
         }
@@ -187,7 +187,7 @@ static int set_limit(int resource, int hard, int soft, rlim_t value, io_streams_
 }
 
 /// The ulimit builtin, used for setting resource limits.
-maybe_t<int> builtin_ulimit(parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
+maybe_t<int> builtin_ulimit(const parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
     const wchar_t *cmd = argv[0];
     int argc = builtin_count_args(argv);
     bool report_all = false;
@@ -398,8 +398,8 @@ maybe_t<int> builtin_ulimit(parser_t &parser, io_streams_t &streams, const wchar
     }
 
     if (what == RLIMIT_UNKNOWN) {
-        streams.err.append_format(
-            _(L"%ls: Resource limit not available on this operating system\n"), cmd);
+        streams.err()->append(format_string(
+            _(L"%ls: Resource limit not available on this operating system\n"), cmd));
         builtin_print_error_trailer(parser, streams.err, cmd);
         return STATUS_INVALID_ARGS;
     }
@@ -410,7 +410,7 @@ maybe_t<int> builtin_ulimit(parser_t &parser, io_streams_t &streams, const wchar
         print(what, hard, streams);
         return STATUS_CMD_OK;
     } else if (arg_count != 1) {
-        streams.err.append_format(BUILTIN_ERR_TOO_MANY_ARGUMENTS, cmd);
+        streams.err()->append(format_string(BUILTIN_ERR_TOO_MANY_ARGUMENTS, cmd));
         builtin_print_error_trailer(parser, streams.err, cmd);
         return STATUS_INVALID_ARGS;
     }
@@ -423,7 +423,8 @@ maybe_t<int> builtin_ulimit(parser_t &parser, io_streams_t &streams, const wchar
 
     rlim_t new_limit;
     if (*argv[w.woptind] == L'\0') {
-        streams.err.append_format(_(L"%ls: New limit cannot be an empty string\n"), cmd);
+        streams.err()->append(
+            format_string(_(L"%ls: New limit cannot be an empty string\n"), cmd));
         builtin_print_error_trailer(parser, streams.err, cmd);
         return STATUS_INVALID_ARGS;
     } else if (wcscasecmp(argv[w.woptind], L"unlimited") == 0) {
@@ -435,7 +436,8 @@ maybe_t<int> builtin_ulimit(parser_t &parser, io_streams_t &streams, const wchar
     } else {
         new_limit = fish_wcstol(argv[w.woptind]);
         if (errno) {
-            streams.err.append_format(_(L"%ls: Invalid limit '%ls'\n"), cmd, argv[w.woptind]);
+            streams.err()->append(
+                format_string(_(L"%ls: Invalid limit '%ls'\n"), cmd, argv[w.woptind]));
             builtin_print_error_trailer(parser, streams.err, cmd);
             return STATUS_INVALID_ARGS;
         }

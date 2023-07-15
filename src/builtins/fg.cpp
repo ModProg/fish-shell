@@ -29,7 +29,7 @@
 #include "job_group.rs.h"
 
 /// Builtin for putting a job in the foreground.
-maybe_t<int> builtin_fg(parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
+maybe_t<int> builtin_fg(const parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
     const wchar_t *cmd = argv[0];
     int argc = builtin_count_args(argv);
     help_only_cmd_opts_t opts;
@@ -56,7 +56,7 @@ maybe_t<int> builtin_fg(parser_t &parser, io_streams_t &streams, const wchar_t *
             }
         }
         if (!job) {
-            streams.err.append_format(_(L"%ls: There are no suitable jobs\n"), cmd);
+            streams.err()->append(format_string(_(L"%ls: There are no suitable jobs\n"), cmd));
         }
     } else if (optind + 1 < argc) {
         // Specifying more than one job to put to the foreground is a syntax error, we still
@@ -69,9 +69,10 @@ maybe_t<int> builtin_fg(parser_t &parser, io_streams_t &streams, const wchar_t *
         }
 
         if (found_job) {
-            streams.err.append_format(_(L"%ls: Ambiguous job\n"), cmd);
+            streams.err()->append(format_string(_(L"%ls: Ambiguous job\n"), cmd));
         } else {
-            streams.err.append_format(_(L"%ls: '%ls' is not a job\n"), cmd, argv[optind]);
+            streams.err()->append(
+                format_string(_(L"%ls: '%ls' is not a job\n"), cmd, argv[optind]));
         }
 
         job = nullptr;
@@ -79,17 +80,18 @@ maybe_t<int> builtin_fg(parser_t &parser, io_streams_t &streams, const wchar_t *
     } else {
         int pid = abs(fish_wcstoi(argv[optind]));
         if (errno) {
-            streams.err.append_format(BUILTIN_ERR_NOT_NUMBER, cmd, argv[optind]);
+            streams.err()->append(format_string(BUILTIN_ERR_NOT_NUMBER, cmd, argv[optind]));
             builtin_print_error_trailer(parser, streams.err, cmd);
         } else {
             job = parser.job_get_from_pid(pid);
             if (!job || !job->is_constructed() || job->is_completed()) {
-                streams.err.append_format(_(L"%ls: No suitable job: %d\n"), cmd, pid);
+                streams.err()->append(format_string(_(L"%ls: No suitable job: %d\n"), cmd, pid));
                 job = nullptr;
             } else if (!job->wants_job_control()) {
-                streams.err.append_format(_(L"%ls: Can't put job %d, '%ls' to foreground because "
-                                            L"it is not under job control\n"),
-                                          cmd, pid, job->command_wcstr());
+                streams.err()->append(
+                    format_string(_(L"%ls: Can't put job %d, '%ls' to foreground because "
+                                     L"it is not under job control\n"),
+                                   cmd, pid, job->command_wcstr()));
                 job = nullptr;
             }
         }
@@ -100,7 +102,7 @@ maybe_t<int> builtin_fg(parser_t &parser, io_streams_t &streams, const wchar_t *
     }
 
     if (streams.err_is_redirected) {
-        streams.err.append_format(FG_MSG, job->job_id(), job->command_wcstr());
+        streams.err()->append(format_string(FG_MSG, job->job_id(), job->command_wcstr()));
     } else {
         // If we aren't redirecting, send output to real stderr, since stuff in sb_err won't get
         // printed until the command finishes.
@@ -127,13 +129,13 @@ maybe_t<int> builtin_fg(parser_t &parser, io_streams_t &streams, const wchar_t *
         int res = tcsetattr(STDIN_FILENO, TCSADRAIN, termios);
         if (res < 0) wperror(L"tcsetattr");
     }
-    tty_transfer_t transfer;
-    transfer.to_job_group(job->group);
+    rust::Box<TtyTransfer> transfer = new_tty_transfer();
+    transfer->to_job_group(job->group);
     bool resumed = job->resume();
     if (resumed) {
         job->continue_job(parser);
     }
-    if (job->is_stopped()) transfer.save_tty_modes();
-    transfer.reclaim();
+    if (job->is_stopped()) transfer->save_tty_modes();
+    transfer->reclaim();
     return resumed ? STATUS_CMD_OK : STATUS_CMD_ERROR;
 }

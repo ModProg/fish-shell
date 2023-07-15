@@ -55,7 +55,7 @@ static const struct woption long_options[] = {{L"erase", no_argument, 'e'},
                                               {}};
 
 static int parse_cmd_opts(functions_cmd_opts_t &opts, int *optind,  //!OCLINT(high ncss method)
-                          int argc, const wchar_t **argv, parser_t &parser, io_streams_t &streams) {
+                          int argc, const wchar_t **argv, const parser_t &parser, io_streams_t &streams) {
     const wchar_t *cmd = argv[0];
     int opt;
     wgetopter_t w;
@@ -129,7 +129,7 @@ static int parse_cmd_opts(functions_cmd_opts_t &opts, int *optind,  //!OCLINT(hi
 }
 
 static int report_function_metadata(const wcstring &funcname, bool verbose, io_streams_t &streams,
-                                    parser_t &parser, bool metadata_as_comments) {
+                                    const parser_t &parser, bool metadata_as_comments) {
     wcstring path = L"n/a";
     const wchar_t *autoloaded = L"n/a";
     const wchar_t *shadows_scope = L"n/a";
@@ -193,18 +193,18 @@ static int report_function_metadata(const wcstring &funcname, bool verbose, io_s
         if (!streams.out_is_redirected && isatty(STDOUT_FILENO)) {
             std::vector<highlight_spec_t> colors;
             highlight_shell(comment, colors, parser.context());
-            streams.out.append(str2wcstring(colorize(comment, colors, parser.vars())));
+            streams.out()->append(str2wcstring(colorize(comment, colors, parser.vars())));
         } else {
-            streams.out.append(comment);
+            streams.out()->append(comment);
         }
     } else {
-        streams.out.append_format(L"%ls\n", is_copy ? copy_path.c_str() : path.c_str());
+        streams.out()->append(format_string(L"%ls\n", is_copy ? copy_path.c_str() : path.c_str()));
 
         if (verbose) {
-            streams.out.append_format(L"%ls\n", is_copy ? path.c_str() : autoloaded);
-            streams.out.append_format(L"%d\n", line_number);
-            streams.out.append_format(L"%ls\n", shadows_scope);
-            streams.out.append_format(L"%ls\n", description.c_str());
+            streams.out()->append(format_string(L"%ls\n", is_copy ? path.c_str() : autoloaded));
+            streams.out()->append(format_string(L"%d\n", line_number));
+            streams.out()->append(format_string(L"%ls\n", shadows_scope));
+            streams.out()->append(format_string(L"%ls\n", description.c_str()));
         }
     }
 
@@ -221,7 +221,7 @@ static bool type_filter_valid(const wcstring &filter) {
 }
 
 /// The functions builtin, used for listing and erasing functions.
-maybe_t<int> builtin_functions(parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
+maybe_t<int> builtin_functions(const parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
     const wchar_t *cmd = argv[0];
     int argc = builtin_count_args(argv);
     functions_cmd_opts_t opts;
@@ -238,13 +238,13 @@ maybe_t<int> builtin_functions(parser_t &parser, io_streams_t &streams, const wc
     // Erase, desc, query, copy and list are mutually exclusive.
     bool describe = opts.description != nullptr;
     if (describe + opts.erase + opts.list + opts.query + opts.copy > 1) {
-        streams.err.append_format(BUILTIN_ERR_COMBO, cmd);
+        streams.err()->append(format_string(BUILTIN_ERR_COMBO, cmd));
         builtin_print_error_trailer(parser, streams.err, cmd);
         return STATUS_INVALID_ARGS;
     }
 
     if (opts.report_metadata && opts.no_metadata) {
-        streams.err.append_format(BUILTIN_ERR_COMBO, cmd);
+        streams.err()->append(format_string(BUILTIN_ERR_COMBO, cmd));
         builtin_print_error_trailer(parser, streams.err, cmd);
         return STATUS_INVALID_ARGS;
     }
@@ -256,14 +256,16 @@ maybe_t<int> builtin_functions(parser_t &parser, io_streams_t &streams, const wc
 
     if (opts.description) {
         if (argc - optind != 1) {
-            streams.err.append_format(_(L"%ls: Expected exactly one function name\n"), cmd);
+            streams.err()->append(
+                format_string(_(L"%ls: Expected exactly one function name\n"), cmd));
             builtin_print_error_trailer(parser, streams.err, cmd);
             return STATUS_INVALID_ARGS;
         }
 
         const wchar_t *func = argv[optind];
         if (!function_exists(func, parser)) {
-            streams.err.append_format(_(L"%ls: Function '%ls' does not exist\n"), cmd, func);
+            streams.err()->append(
+                format_string(_(L"%ls: Function '%ls' does not exist\n"), cmd, func));
             builtin_print_error_trailer(parser, streams.err, cmd);
             return STATUS_CMD_ERROR;
         }
@@ -274,8 +276,8 @@ maybe_t<int> builtin_functions(parser_t &parser, io_streams_t &streams, const wc
 
     if (opts.report_metadata) {
         if (argc - optind != 1) {
-            streams.err.append_format(BUILTIN_ERR_ARG_COUNT2, cmd, argv[optind - 1], 1,
-                                      argc - optind);
+            streams.err()->append(
+                format_string(BUILTIN_ERR_ARG_COUNT2, cmd, argv[optind - 1], 1, argc - optind));
             return STATUS_INVALID_ARGS;
         }
 
@@ -286,9 +288,10 @@ maybe_t<int> builtin_functions(parser_t &parser, io_streams_t &streams, const wc
     if (opts.handlers) {
         wcstring type_filter = opts.handlers_type ? opts.handlers_type : L"";
         if (!type_filter_valid(type_filter)) {
-            streams.err.append_format(_(L"%ls: Expected generic | variable | signal | exit | "
-                                        L"job-id for --handlers-type\n"),
-                                      cmd);
+            streams.err()->append(
+                format_string(_(L"%ls: Expected generic | variable | signal | exit | "
+                                 L"job-id for --handlers-type\n"),
+                               cmd));
             return STATUS_INVALID_ARGS;
         }
         event_print(streams, type_filter);
@@ -317,10 +320,10 @@ maybe_t<int> builtin_functions(parser_t &parser, io_streams_t &streams, const wc
                 buff.resize(buff.size() - 2, '\0');
             }
 
-            streams.out.append(reformat_for_screen(buff, termsize_last()));
+            streams.out()->append(reformat_for_screen(buff, termsize_last()));
         } else {
             for (auto &name : names) {
-                streams.out.append(name + L"\n");
+                streams.out()->append(name + L"\n");
             }
         }
 
@@ -332,9 +335,10 @@ maybe_t<int> builtin_functions(parser_t &parser, io_streams_t &streams, const wc
         wcstring new_func;
 
         if (argc - optind != 2) {
-            streams.err.append_format(_(L"%ls: Expected exactly two names (current function name, "
-                                        L"and new function name)\n"),
-                                      cmd);
+            streams.err()->append(
+                format_string(_(L"%ls: Expected exactly two names (current function name, "
+                                 L"and new function name)\n"),
+                               cmd));
             builtin_print_error_trailer(parser, streams.err, cmd);
             return STATUS_INVALID_ARGS;
         }
@@ -342,24 +346,24 @@ maybe_t<int> builtin_functions(parser_t &parser, io_streams_t &streams, const wc
         new_func = argv[optind + 1];
 
         if (!function_exists(current_func, parser)) {
-            streams.err.append_format(_(L"%ls: Function '%ls' does not exist\n"), cmd,
-                                      current_func.c_str());
+            streams.err()->append(format_string(_(L"%ls: Function '%ls' does not exist\n"), cmd,
+                                                 current_func.c_str()));
             builtin_print_error_trailer(parser, streams.err, cmd);
             return STATUS_CMD_ERROR;
         }
 
         if (!valid_func_name(new_func) || parser_keywords_is_reserved(new_func)) {
-            streams.err.append_format(_(L"%ls: Illegal function name '%ls'\n"), cmd,
-                                      new_func.c_str());
+            streams.err()->append(
+                format_string(_(L"%ls: Illegal function name '%ls'\n"), cmd, new_func.c_str()));
             builtin_print_error_trailer(parser, streams.err, cmd);
             return STATUS_INVALID_ARGS;
         }
 
         // Keep things simple: don't allow existing names to be copy targets.
         if (function_exists(new_func, parser)) {
-            streams.err.append_format(
-                _(L"%ls: Function '%ls' already exists. Cannot create copy '%ls'\n"), cmd,
-                new_func.c_str(), current_func.c_str());
+            streams.err()->append(
+                format_string(_(L"%ls: Function '%ls' already exists. Cannot create copy '%ls'\n"),
+                               cmd, new_func.c_str(), current_func.c_str()));
             builtin_print_error_trailer(parser, streams.err, cmd);
             return STATUS_CMD_ERROR;
         }
@@ -376,7 +380,7 @@ maybe_t<int> builtin_functions(parser_t &parser, io_streams_t &streams, const wc
             res++;
         } else {
             if (!opts.query) {
-                if (i != optind) streams.out.append(L"\n");
+                if (i != optind) streams.out()->append(L"\n");
                 if (!opts.no_metadata) {
                     report_function_metadata(funcname, opts.verbose, streams, parser, true);
                 }
@@ -386,9 +390,9 @@ maybe_t<int> builtin_functions(parser_t &parser, io_streams_t &streams, const wc
                 if (!streams.out_is_redirected && isatty(STDOUT_FILENO)) {
                     std::vector<highlight_spec_t> colors;
                     highlight_shell(def, colors, parser.context());
-                    streams.out.append(str2wcstring(colorize(def, colors, parser.vars())));
+                    streams.out()->append(str2wcstring(colorize(def, colors, parser.vars())));
                 } else {
-                    streams.out.append(def);
+                    streams.out()->append(def);
                 }
             }
         }

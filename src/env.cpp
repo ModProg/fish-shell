@@ -1,3 +1,4 @@
+#if 0
 // Functions for setting and getting environment variables.
 #include "config.h"  // IWYU pragma: keep
 
@@ -211,7 +212,7 @@ void misc_init() {
 
 /// Make sure the PATH variable contains something.
 static void setup_path() {
-    auto &vars = env_stack_t::globals();
+    auto &vars = env_stack_globals();
     const auto path = vars.get_unless_empty(L"PATH");
     if (!path) {
 #if defined(_CS_PATH)
@@ -235,7 +236,7 @@ static std::map<wcstring, wcstring> inheriteds;
 const std::map<wcstring, wcstring> &env_get_inherited() { return inheriteds; }
 
 void env_init(const struct config_paths_t *paths, bool do_uvars, bool default_paths) {
-    env_stack_t &vars = env_stack_t::principal();
+    env_stack_t &vars = env_stack_principal();
     // Import environment variables. Walk backwards so that the first one out of any duplicates wins
     // (See issue #2784).
     wcstring key, val;
@@ -611,3 +612,4 @@ void event_list_ffi_t::push(void *event_vp) {
     assert(event && "Null event");
     events.push_back(rust::Box<Event>::from_raw(event));
 }
+#endif

@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "../builtin.h"
 #include "../common.h"
@@ -77,9 +78,9 @@ static const struct woption long_options[] = {{L"prefix", no_argument, 'p'},
 static bool set_hist_cmd(const wchar_t *cmd, hist_cmd_t *hist_cmd, hist_cmd_t sub_cmd,
                          io_streams_t &streams) {
     if (*hist_cmd != HIST_UNDEF) {
-        streams.err.append_format(BUILTIN_ERR_COMBO2_EXCLUSIVE, cmd,
-                                  enum_to_str(*hist_cmd, hist_enum_map),
-                                  enum_to_str(sub_cmd, hist_enum_map));
+        streams.err()->append(format_string(BUILTIN_ERR_COMBO2_EXCLUSIVE, cmd,
+                                            enum_to_str(*hist_cmd, hist_enum_map),
+                                            enum_to_str(sub_cmd, hist_enum_map)));
         return false;
     }
 
@@ -92,19 +93,22 @@ static bool check_for_unexpected_hist_args(const history_cmd_opts_t &opts, const
                                            io_streams_t &streams) {
     if (opts.history_search_type_defined || opts.show_time_format || opts.null_terminate) {
         const wchar_t *subcmd_str = enum_to_str(opts.hist_cmd, hist_enum_map);
-        streams.err.append_format(_(L"%ls: %ls: subcommand takes no options\n"), cmd, subcmd_str);
+        streams.err()->append(
+            format_string(_(L"%ls: %ls: subcommand takes no options\n"), cmd, subcmd_str));
         return true;
     }
     if (!args.empty()) {
         const wchar_t *subcmd_str = enum_to_str(opts.hist_cmd, hist_enum_map);
-        streams.err.append_format(BUILTIN_ERR_ARG_COUNT2, cmd, subcmd_str, 0, args.size());
+        streams.err()->append(
+            format_string(BUILTIN_ERR_ARG_COUNT2, cmd, subcmd_str, 0, args.size()));
         return true;
     }
     return false;
 }
 
 static int parse_cmd_opts(history_cmd_opts_t &opts, int *optind,  //!OCLINT(high ncss method)
-                          int argc, const wchar_t **argv, parser_t &parser, io_streams_t &streams) {
+                          int argc, const wchar_t **argv, const parser_t &parser,
+                          io_streams_t &streams) {
     const wchar_t *cmd = argv[0];
     int opt;
     wgetopter_t w;
@@ -149,17 +153,17 @@ static int parse_cmd_opts(history_cmd_opts_t &opts, int *optind,  //!OCLINT(high
                 break;
             }
             case 'p': {
-                opts.search_type = history_search_type_t::prefix_glob;
+                opts.search_type = history_search_type_t::PrefixGlob;
                 opts.history_search_type_defined = true;
                 break;
             }
             case 'c': {
-                opts.search_type = history_search_type_t::contains_glob;
+                opts.search_type = history_search_type_t::ContainsGlob;
                 opts.history_search_type_defined = true;
                 break;
             }
             case 'e': {
-                opts.search_type = history_search_type_t::exact;
+                opts.search_type = history_search_type_t::Exact;
                 opts.history_search_type_defined = true;
                 break;
             }
@@ -170,7 +174,7 @@ static int parse_cmd_opts(history_cmd_opts_t &opts, int *optind,  //!OCLINT(high
             case 'n': {
                 long x = fish_wcstol(w.woptarg);
                 if (errno) {
-                    streams.err.append_format(BUILTIN_ERR_NOT_NUMBER, cmd, w.woptarg);
+                    streams.err()->append(format_string(BUILTIN_ERR_NOT_NUMBER, cmd, w.woptarg));
                     return STATUS_INVALID_ARGS;
                 }
                 opts.max_items = static_cast<size_t>(x);
@@ -209,7 +213,7 @@ static int parse_cmd_opts(history_cmd_opts_t &opts, int *optind,  //!OCLINT(high
 }
 
 /// Manipulate history of interactive commands executed by the user.
-maybe_t<int> builtin_history(parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
+maybe_t<int> builtin_history(const parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
     const wchar_t *cmd = argv[0];
     int argc = builtin_count_args(argv);
     history_cmd_opts_t opts;
@@ -225,8 +229,8 @@ maybe_t<int> builtin_history(parser_t &parser, io_streams_t &streams, const wcha
 
     // Use the default history if we have none (which happens if invoked non-interactively, e.g.
     // from webconfig.py.
-    std::shared_ptr<history_t> history = commandline_get_state().history;
-    if (!history) history = history_t::with_name(history_session_id(parser.vars()));
+    auto history = commandline_get_state().history;
+    if (!history) history = history_with_name(history_session_id(parser.vars())->c_str());
 
     // If a history command hasn't already been specified via a flag check the first word.
     // Note that this can be simplified after we eliminate allowing subcommands as flags.
@@ -249,16 +253,16 @@ maybe_t<int> builtin_history(parser_t &parser, io_streams_t &streams, const wcha
     // Establish appropriate defaults.
     if (opts.hist_cmd == HIST_UNDEF) opts.hist_cmd = HIST_SEARCH;
     if (!opts.history_search_type_defined) {
-        if (opts.hist_cmd == HIST_SEARCH) opts.search_type = history_search_type_t::contains_glob;
-        if (opts.hist_cmd == HIST_DELETE) opts.search_type = history_search_type_t::exact;
+        if (opts.hist_cmd == HIST_SEARCH) opts.search_type = history_search_type_t::ContainsGlob;
+        if (opts.hist_cmd == HIST_DELETE) opts.search_type = history_search_type_t::Exact;
     }
 
     int status = STATUS_CMD_OK;
     switch (opts.hist_cmd) {
         case HIST_SEARCH: {
-            if (!history->search(opts.search_type, args, opts.show_time_format, opts.max_items,
-                                 opts.case_sensitive, opts.null_terminate, opts.reverse,
-                                 parser.cancel_checker(), streams)) {
+            if (!(*history)->search(opts.search_type, args, opts.show_time_format, opts.max_items,
+                                    opts.case_sensitive, opts.null_terminate, opts.reverse, true,
+                                    streams)) {
                 status = STATUS_CMD_ERROR;
             }
             break;
@@ -267,19 +271,20 @@ maybe_t<int> builtin_history(parser_t &parser, io_streams_t &streams, const wcha
             // TODO: Move this code to the history module and support the other search types
             // including case-insensitive matches. At this time we expect the non-exact deletions to
             // be handled only by the history function's interactive delete feature.
-            if (opts.search_type != history_search_type_t::exact) {
-                streams.err.append_format(_(L"builtin history delete only supports --exact\n"));
+            if (opts.search_type != history_search_type_t::Exact) {
+                streams.err()->append(
+                    format_string(_(L"builtin history delete only supports --exact\n")));
                 status = STATUS_INVALID_ARGS;
                 break;
             }
             if (!opts.case_sensitive) {
-                streams.err.append_format(
-                    _(L"builtin history delete --exact requires --case-sensitive\n"));
+                streams.err()->append(format_string(
+                    _(L"builtin history delete --exact requires --case-sensitive\n")));
                 status = STATUS_INVALID_ARGS;
                 break;
             }
             for (const wcstring &delete_string : args) {
-                history->remove(delete_string);
+                (*history)->remove(delete_string.c_str());
             }
             break;
         }
@@ -288,8 +293,8 @@ maybe_t<int> builtin_history(parser_t &parser, io_streams_t &streams, const wcha
                 status = STATUS_INVALID_ARGS;
                 break;
             }
-            history->clear();
-            history->save();
+            (*history)->clear();
+            (*history)->save();
             break;
         }
         case HIST_CLEAR_SESSION: {
@@ -297,8 +302,8 @@ maybe_t<int> builtin_history(parser_t &parser, io_streams_t &streams, const wcha
                 status = STATUS_INVALID_ARGS;
                 break;
             }
-            history->clear_session();
-            history->save();
+            (*history)->clear_session();
+            (*history)->save();
             break;
         }
         case HIST_MERGE: {
@@ -308,11 +313,12 @@ maybe_t<int> builtin_history(parser_t &parser, io_streams_t &streams, const wcha
             }
 
             if (in_private_mode(parser.vars())) {
-                streams.err.append_format(_(L"%ls: can't merge history in private mode\n"), cmd);
+                streams.err()->append(
+                    format_string(_(L"%ls: can't merge history in private mode\n"), cmd));
                 status = STATUS_INVALID_ARGS;
                 break;
             }
-            history->incorporate_external_changes();
+            (*history)->incorporate_external_changes();
             break;
         }
         case HIST_SAVE: {
@@ -320,7 +326,7 @@ maybe_t<int> builtin_history(parser_t &parser, io_streams_t &streams, const wcha
                 status = STATUS_INVALID_ARGS;
                 break;
             }
-            history->save();
+            (*history)->save();
             break;
         }
         case HIST_UNDEF: {

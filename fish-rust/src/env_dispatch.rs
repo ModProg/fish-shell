@@ -1,14 +1,17 @@
 use crate::common::ToCString;
+use crate::complete::complete_invalidate_path;
 use crate::curses::{self, Term};
 use crate::env::{setenv_lock, unsetenv_lock, EnvMode, EnvStack, Environment};
 use crate::env::{CURSES_INITIALIZED, READ_BYTE_LIMIT, TERM_HAS_XN};
-use crate::ffi::is_interactive_session;
 use crate::flog::FLOGF;
 use crate::function;
+use crate::input_common::update_wait_on_escape_ms;
 use crate::output::ColorSupport;
+use crate::proc::is_interactive_session;
 use crate::wchar::L;
 use crate::wchar::{wstr, WString};
 use crate::wchar_ext::WExt;
+use crate::wchar_ffi::WCharToFFI;
 use crate::wutil::fish_wcstoi;
 use crate::wutil::wgettext;
 use std::collections::HashMap;
@@ -98,13 +101,6 @@ enum EnvCallback {
 #[derive(Default)]
 struct VarDispatchTable {
     table: HashMap<&'static wstr, EnvCallback>,
-}
-
-// TODO: Delete this after input_common is ported (and pass the input_function function directly).
-fn update_wait_on_escape_ms(vars: &EnvStack) {
-    let fish_escape_delay_ms = vars.get_unless_empty(L!("fish_escape_delay_ms"));
-    let var = crate::env::environment::env_var_to_ffi(fish_escape_delay_ms);
-    crate::ffi::update_wait_on_escape_ms_ffi(var);
 }
 
 impl VarDispatchTable {
@@ -242,8 +238,8 @@ fn handle_term_size_change(vars: &EnvStack) {
 
 fn handle_fish_history_change(vars: &EnvStack) {
     let fish_history = vars.get(L!("fish_history"));
-    let var = crate::env::env_var_to_ffi(fish_history);
-    crate::ffi::reader_change_history(&crate::ffi::history_session_id(var));
+    let session_id = crate::history::history_session_id(vars);
+    crate::ffi::reader_change_history(&*session_id.to_ffi());
 }
 
 fn handle_fish_cursor_selection_mode_change(vars: &EnvStack) {
@@ -278,7 +274,7 @@ fn handle_function_path_change(_: &EnvStack) {
 }
 
 fn handle_complete_path_change(_: &EnvStack) {
-    crate::ffi::complete_invalidate_path();
+    complete_invalidate_path()
 }
 
 fn handle_tz_change(var_name: &wstr, vars: &EnvStack) {

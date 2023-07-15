@@ -14,15 +14,16 @@
 
 #include "common.h"
 #include "complete.h"
+#include "env.h"
 #include "highlight.h"
+#include "io.h"
 #include "maybe.h"
 #include "parse_constants.h"
+#include "parser.h"
 
-class env_stack_t;
-class environment_t;
-class history_t;
-class io_chain_t;
-class parser_t;
+#if INCLUDE_RUST_HEADERS
+#include "reader.rs.h"
+#endif
 
 /// An edit action that can be undone.
 struct edit_t {
@@ -141,7 +142,8 @@ class editable_line_t {
 
 /// Read commands from \c fd until encountering EOF.
 /// The fd is not closed.
-int reader_read(parser_t &parser, int fd, const io_chain_t &io);
+int reader_read(const parser_t &parser, int fd, const io_chain_t &io);
+int reader_read_ffi(const void *parser, int fd, const void *io);
 
 /// Mark that we encountered SIGHUP and must (soon) exit. This is invoked from a signal handler.
 extern "C" {
@@ -185,7 +187,8 @@ void reader_set_autosuggestion_enabled_ffi(bool enabled);
 /// \param cmd Command line string passed to \c fish_title if is defined.
 /// \param parser The parser to use for autoloading fish_title.
 /// \param reset_cursor_position If set, issue a \r so the line driver knows where we are
-void reader_write_title(const wcstring &cmd, parser_t &parser, bool reset_cursor_position = true);
+void reader_write_title(const wcstring &cmd, const parser_t &parser,
+                        bool reset_cursor_position = true);
 
 /// Tell the reader that it needs to re-exec the prompt and repaint.
 /// This may be called in response to e.g. a color variable change.
@@ -256,7 +259,7 @@ bool check_exit_loop_maybe_warning(reader_data_t *data);
 
 /// Push a new reader environment controlled by \p conf, using the given history name.
 /// If \p history_name is empty, then save history in-memory only; do not write it to disk.
-void reader_push(parser_t &parser, const wcstring &history_name, reader_config_t &&conf);
+void reader_push(const parser_t &parser, const wcstring &history_name, reader_config_t &&conf);
 
 /// Return to previous reader environment.
 void reader_pop();
@@ -281,7 +284,7 @@ wcstring combine_command_and_autosuggestion(const wcstring &cmdline,
 struct abbrs_replacement_t;
 maybe_t<abbrs_replacement_t> reader_expand_abbreviation_at_cursor(const wcstring &cmdline,
                                                                   size_t cursor_pos,
-                                                                  parser_t &parser);
+                                                                  const parser_t &parser);
 
 /// Apply a completion string. Exposed for testing only.
 wcstring completion_apply_to_command_line(const wcstring &val_str, complete_flags_t flags,
@@ -290,14 +293,15 @@ wcstring completion_apply_to_command_line(const wcstring &val_str, complete_flag
 
 /// Snapshotted state from the reader.
 struct commandline_state_t {
-    wcstring text;                         // command line text, or empty if not interactive
-    size_t cursor_pos{0};                  // position of the cursor, may be as large as text.size()
-    maybe_t<source_range_t> selection{};   // visual selection, or none if none
-    std::shared_ptr<history_t> history{};  // current reader history, or null if not interactive
-    bool pager_mode{false};                // pager is visible
-    bool pager_fully_disclosed{false};     // pager already shows everything if possible
-    bool search_mode{false};               // pager is visible and search is active
-    bool initialized{false};               // if false, the reader has not yet been entered
+    wcstring text;                        // command line text, or empty if not interactive
+    size_t cursor_pos{0};                 // position of the cursor, may be as large as text.size()
+    maybe_t<source_range_t> selection{};  // visual selection, or none if none
+    maybe_t<rust::Box<HistorySharedPtr>>
+        history{};                      // current reader history, or null if not interactive
+    bool pager_mode{false};             // pager is visible
+    bool pager_fully_disclosed{false};  // pager already shows everything if possible
+    bool search_mode{false};            // pager is visible and search is active
+    bool initialized{false};            // if false, the reader has not yet been entered
 };
 
 /// Get the command line state. This may be fetched on a background thread.

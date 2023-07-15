@@ -37,14 +37,14 @@
 #define PATH_CHUNK_SIZE PATH_MAX
 
 static void path_error(io_streams_t &streams, const wchar_t *fmt, ...) {
-    streams.err.append(L"path ");
+    streams.err()->append(L"path ");
     std::va_list va;
     va_start(va, fmt);
-    streams.err.append_formatv(fmt, va);
+    streams.err()->append_formatv(fmt, va);
     va_end(va);
 }
 
-static void path_unknown_option(parser_t &parser, io_streams_t &streams, const wchar_t *subcmd,
+static void path_unknown_option(const parser_t &parser, io_streams_t &streams, const wchar_t *subcmd,
                                 const wchar_t *opt) {
     path_error(streams, BUILTIN_ERR_UNKNOWN, subcmd, opt);
     builtin_print_error_trailer(parser, streams.err, L"path");
@@ -199,16 +199,16 @@ struct options_t {  //!OCLINT(too many fields)
 static void path_out(io_streams_t &streams, const options_t &opts, const wcstring &str) {
     if (!opts.quiet) {
         if (!opts.null_out) {
-            streams.out.append_with_separation(str, separation_type_t::explicitly);
+            streams.out()->append_with_separation(str, separation_type_t::explicitly);
         } else {
             // Note the char - if this was a string instead we'd add
             // a string of length 0, i.e. nothing
-            streams.out.append(str + L'\0');
+            streams.out()->append(str + L'\0');
         }
     }
 }
 
-static int handle_flag_q(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_q(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     UNUSED(argv);
     UNUSED(parser);
@@ -218,7 +218,7 @@ static int handle_flag_q(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_CMD_OK;
 }
 
-static int handle_flag_z(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_z(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     UNUSED(argv);
     UNUSED(parser);
@@ -228,7 +228,7 @@ static int handle_flag_z(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_CMD_OK;
 }
 
-static int handle_flag_Z(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_Z(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     UNUSED(argv);
     UNUSED(parser);
@@ -238,7 +238,7 @@ static int handle_flag_Z(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_CMD_OK;
 }
 
-static int handle_flag_t(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_t(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->type_valid) {
         if (!opts->have_type) opts->type = 0;
@@ -270,7 +270,7 @@ static int handle_flag_t(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_p(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_p(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->perm_valid) {
         if (!opts->have_perm) opts->perm = 0;
@@ -306,7 +306,7 @@ static int handle_flag_p(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_perms(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_perms(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                              const wgetopter_t &w, options_t *opts, path_perm_flags_t perm) {
     if (opts->perm_valid) {
         if (!opts->have_perm) opts->perm = 0;
@@ -318,7 +318,7 @@ static int handle_flag_perms(const wchar_t **argv, parser_t &parser, io_streams_
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_R(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_R(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->relative_valid) {
         opts->relative = true;
@@ -328,7 +328,7 @@ static int handle_flag_R(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_r(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_r(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->reverse_valid) {
         opts->reverse = true;
@@ -340,16 +340,16 @@ static int handle_flag_r(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_w(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_w(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     return handle_flag_perms(argv, parser, streams, w, opts, PERM_WRITE);
 }
-static int handle_flag_x(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_x(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     return handle_flag_perms(argv, parser, streams, w, opts, PERM_EXEC);
 }
 
-static int handle_flag_types(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_types(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                              const wgetopter_t &w, options_t *opts, path_type_flags_t type) {
     if (opts->type_valid) {
         if (!opts->have_type) opts->type = 0;
@@ -361,20 +361,20 @@ static int handle_flag_types(const wchar_t **argv, parser_t &parser, io_streams_
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_f(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_f(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     return handle_flag_types(argv, parser, streams, w, opts, TYPE_FILE);
 }
-static int handle_flag_l(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_l(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     return handle_flag_types(argv, parser, streams, w, opts, TYPE_LINK);
 }
-static int handle_flag_d(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_d(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     return handle_flag_types(argv, parser, streams, w, opts, TYPE_DIR);
 }
 
-static int handle_flag_v(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_v(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->invert_valid) {
         opts->invert = true;
@@ -384,7 +384,7 @@ static int handle_flag_v(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_u(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_u(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->unique_valid) {
         opts->unique = true;
@@ -394,7 +394,7 @@ static int handle_flag_u(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_key(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_key(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                            const wgetopter_t &w, options_t *opts) {
     UNUSED(argv);
     UNUSED(parser);
@@ -450,7 +450,7 @@ static const std::unordered_map<char, decltype(*handle_flag_q)> flag_to_function
 
 /// Parse the arguments for flags recognized by a specific string subcommand.
 static int parse_opts(options_t *opts, int *optind, int n_req_args, int argc, const wchar_t **argv,
-                      parser_t &parser, io_streams_t &streams) {
+                      const parser_t &parser, io_streams_t &streams) {
     const wchar_t *cmd = argv[0];
     wcstring short_opts = construct_short_opts(opts);
     const wchar_t *short_options = short_opts.c_str();
@@ -462,7 +462,7 @@ static int parse_opts(options_t *opts, int *optind, int n_req_args, int argc, co
             int retval = fn->second(argv, parser, streams, w, opts);
             if (retval != STATUS_CMD_OK) return retval;
         } else if (opt == ':') {
-            streams.err.append(L"path ");
+            streams.err()->append(L"path ");
             builtin_missing_argument(parser, streams, cmd, argv[w.woptind - 1],
                                      false /* print_hints */);
             return STATUS_INVALID_ARGS;
@@ -494,7 +494,7 @@ static int parse_opts(options_t *opts, int *optind, int n_req_args, int argc, co
     return STATUS_CMD_OK;
 }
 
-static int path_transform(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv,
+static int path_transform(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv,
                           wcstring (*func)(wcstring)) {
     options_t opts;
     int optind;
@@ -519,11 +519,11 @@ static int path_transform(parser_t &parser, io_streams_t &streams, int argc, con
     return n_transformed > 0 ? STATUS_CMD_OK : STATUS_CMD_ERROR;
 }
 
-static int path_basename(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int path_basename(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     return path_transform(parser, streams, argc, argv, wbasename);
 }
 
-static int path_dirname(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int path_dirname(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     return path_transform(parser, streams, argc, argv, wdirname);
 }
 
@@ -604,7 +604,7 @@ static bool filter_path(options_t opts, const wcstring &path) {
     return true;
 }
 
-static int path_mtime(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int path_mtime(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     options_t opts;
     opts.relative_valid = true;
     int optind;
@@ -634,7 +634,7 @@ static int path_mtime(parser_t &parser, io_streams_t &streams, int argc, const w
     return n_transformed > 0 ? STATUS_CMD_OK : STATUS_CMD_ERROR;
 }
 
-static int path_normalize(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int path_normalize(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     return path_transform(parser, streams, argc, argv, normalize_helper);
 }
 
@@ -660,7 +660,7 @@ static maybe_t<size_t> find_extension(const wcstring &path) {
     return pos + path.size() - filename.size();
 }
 
-static int path_extension(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int path_extension(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     options_t opts;
     int optind;
     int retval = parse_opts(&opts, &optind, 0, argc, argv, parser, streams);
@@ -689,7 +689,7 @@ static int path_extension(parser_t &parser, io_streams_t &streams, int argc, con
     return n_transformed > 0 ? STATUS_CMD_OK : STATUS_CMD_ERROR;
 }
 
-static int path_change_extension(parser_t &parser, io_streams_t &streams, int argc,
+static int path_change_extension(const parser_t &parser, io_streams_t &streams, int argc,
                                  const wchar_t **argv) {
     options_t opts;
     int optind;
@@ -723,7 +723,7 @@ static int path_change_extension(parser_t &parser, io_streams_t &streams, int ar
     return n_transformed > 0 ? STATUS_CMD_OK : STATUS_CMD_ERROR;
 }
 
-static int path_resolve(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int path_resolve(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     options_t opts;
     int optind;
     int retval = parse_opts(&opts, &optind, 0, argc, argv, parser, streams);
@@ -776,7 +776,7 @@ static int path_resolve(parser_t &parser, io_streams_t &streams, int argc, const
     return n_transformed > 0 ? STATUS_CMD_OK : STATUS_CMD_ERROR;
 }
 
-static int path_sort(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int path_sort(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     options_t opts;
     opts.reverse_valid = true;
     opts.key_valid = true;
@@ -851,7 +851,7 @@ static int path_sort(parser_t &parser, io_streams_t &streams, int argc, const wc
 
 // All strings are taken to be filenames, and if they match the type/perms/etc (and exist!)
 // they are passed along.
-static int path_filter(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv,
+static int path_filter(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv,
                        bool is_is) {
     options_t opts;
     opts.type_valid = true;
@@ -890,18 +890,18 @@ static int path_filter(parser_t &parser, io_streams_t &streams, int argc, const 
     return n_transformed > 0 ? STATUS_CMD_OK : STATUS_CMD_ERROR;
 }
 
-static int path_filter(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int path_filter(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     return path_filter(parser, streams, argc, argv, false /* is_is */);
 }
 
-static int path_is(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int path_is(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     return path_filter(parser, streams, argc, argv, true /* is_is */);
 }
 
 // Keep sorted alphabetically
 static constexpr const struct path_subcommand {
     const wchar_t *name;
-    int (*handler)(parser_t &, io_streams_t &, int argc,  //!OCLINT(unused param)
+    int (*handler)(const parser_t &, io_streams_t &, int argc,  //!OCLINT(unused param)
                    const wchar_t **argv);                 //!OCLINT(unused param)
 } path_subcommands[] = {
     // TODO: Which operations do we want?
@@ -919,11 +919,11 @@ static constexpr const struct path_subcommand {
 ASSERT_SORTED_BY_NAME(path_subcommands);
 
 /// The path builtin, for handling paths.
-maybe_t<int> builtin_path(parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
+maybe_t<int> builtin_path(const parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
     const wchar_t *cmd = argv[0];
     int argc = builtin_count_args(argv);
     if (argc <= 1) {
-        streams.err.append_format(BUILTIN_ERR_MISSING_SUBCMD, cmd);
+        streams.err()->append(format_string(BUILTIN_ERR_MISSING_SUBCMD, cmd));
         builtin_print_error_trailer(parser, streams.err, L"path");
         return STATUS_INVALID_ARGS;
     }
@@ -936,7 +936,7 @@ maybe_t<int> builtin_path(parser_t &parser, io_streams_t &streams, const wchar_t
     const wchar_t *subcmd_name = argv[1];
     const auto *subcmd = get_by_sorted_name(subcmd_name, path_subcommands);
     if (!subcmd) {
-        streams.err.append_format(BUILTIN_ERR_INVALID_SUBCMD, cmd, subcmd_name);
+        streams.err()->append(format_string(BUILTIN_ERR_INVALID_SUBCMD, cmd, subcmd_name));
         builtin_print_error_trailer(parser, streams.err, L"path");
         return STATUS_INVALID_ARGS;
     }

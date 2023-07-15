@@ -39,14 +39,14 @@
 namespace {
 
 static void string_error(io_streams_t &streams, const wchar_t *fmt, ...) {
-    streams.err.append(L"string ");
+    streams.err()->append(L"string ");
     va_list va;
     va_start(va, fmt);
-    streams.err.append_formatv(fmt, va);
+    streams.err()->append_formatv(fmt, va);
     va_end(va);
 }
 
-static void string_unknown_option(parser_t &parser, io_streams_t &streams, const wchar_t *subcmd,
+static void string_unknown_option(const parser_t &parser, io_streams_t &streams, const wchar_t *subcmd,
                                   const wchar_t *opt) {
     string_error(streams, BUILTIN_ERR_UNKNOWN, subcmd, opt);
     builtin_print_error_trailer(parser, streams.err, L"string");
@@ -242,7 +242,7 @@ static size_t width_without_escapes(const wcstring &ins, size_t start_pos = 0) {
 }
 
 /// This handles the `--style=xxx` flag.
-static int handle_flag_1(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_1(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     const wchar_t *cmd = argv[0];
 
@@ -266,10 +266,10 @@ static int handle_flag_1(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-using flag_handler_t = int (*)(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+using flag_handler_t = int (*)(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                                const wgetopter_t &w, options_t *opts);
 
-static int handle_flag_N(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_N(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->no_newline_valid) {
         opts->no_newline = true;
@@ -282,7 +282,7 @@ static int handle_flag_N(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_a(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_a(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->all_valid) {
         opts->all = true;
@@ -295,7 +295,7 @@ static int handle_flag_a(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_c(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_c(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->chars_to_trim_valid || opts->chars_to_shorten_valid) {
         opts->chars_to_trim = w.woptarg;
@@ -313,7 +313,7 @@ static int handle_flag_c(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_e(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_e(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->end_valid) {
         opts->end = fish_wcstol(w.woptarg);
@@ -333,7 +333,7 @@ static int handle_flag_e(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_f(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_f(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->filter_valid) {
         opts->filter = true;
@@ -388,7 +388,7 @@ static int handle_flag_f(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_g(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_g(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->groups_only_valid) {
         opts->groups_only = true;
@@ -398,7 +398,7 @@ static int handle_flag_g(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_i(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_i(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->ignore_case_valid) {
         opts->ignore_case = true;
@@ -411,7 +411,7 @@ static int handle_flag_i(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_l(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_l(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->length_valid) {
         opts->length = fish_wcstol(w.woptarg);
@@ -431,7 +431,7 @@ static int handle_flag_l(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_m(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_m(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->max_valid) {
         opts->max = fish_wcstol(w.woptarg);
@@ -448,7 +448,7 @@ static int handle_flag_m(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_n(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_n(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->count_valid) {
         opts->count = fish_wcstol(w.woptarg);
@@ -474,7 +474,7 @@ static int handle_flag_n(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_q(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_q(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->quiet_valid) {
         opts->quiet = true;
@@ -484,7 +484,7 @@ static int handle_flag_q(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_r(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_r(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->regex_valid) {
         opts->regex = true;
@@ -497,7 +497,7 @@ static int handle_flag_r(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_s(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_s(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->start_valid) {
         opts->start = fish_wcstol(w.woptarg);
@@ -514,7 +514,7 @@ static int handle_flag_s(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_v(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_v(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->invert_valid) {
         opts->invert_match = true;
@@ -524,7 +524,7 @@ static int handle_flag_v(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_V(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_V(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->visible_valid) {
         opts->visible = true;
@@ -534,7 +534,7 @@ static int handle_flag_V(const wchar_t **argv, parser_t &parser, io_streams_t &s
     return STATUS_INVALID_ARGS;
 }
 
-static int handle_flag_w(const wchar_t **argv, parser_t &parser, io_streams_t &streams,
+static int handle_flag_w(const wchar_t **argv, const parser_t &parser, io_streams_t &streams,
                          const wgetopter_t &w, options_t *opts) {
     if (opts->width_valid) {
         long width = fish_wcstol(w.woptarg);
@@ -645,7 +645,7 @@ static flag_handler_t get_handler_for_flag(char c) {
 
 /// Parse the arguments for flags recognized by a specific string subcommand.
 static int parse_opts(options_t *opts, int *optind, int n_req_args, int argc, const wchar_t **argv,
-                      parser_t &parser, io_streams_t &streams) {
+                      const parser_t &parser, io_streams_t &streams) {
     const wchar_t *cmd = argv[0];
     wcstring short_opts = construct_short_opts(opts);
     const wchar_t *short_options = short_opts.c_str();
@@ -656,7 +656,7 @@ static int parse_opts(options_t *opts, int *optind, int n_req_args, int argc, co
             int retval = fn(argv, parser, streams, w, opts);
             if (retval != STATUS_CMD_OK) return retval;
         } else if (opt == ':') {
-            streams.err.append(L"string ");  // clone of string_error
+            streams.err()->append(L"string ");  // clone of string_error
             builtin_missing_argument(parser, streams, cmd, argv[w.woptind - 1],
                                      false /* print_hints */);
             return STATUS_INVALID_ARGS;
@@ -696,7 +696,7 @@ static int parse_opts(options_t *opts, int *optind, int n_req_args, int argc, co
     return STATUS_CMD_OK;
 }
 
-static int string_escape(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int string_escape(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     options_t opts;
     opts.no_quoted_valid = true;
     opts.style_valid = true;
@@ -715,7 +715,7 @@ static int string_escape(parser_t &parser, io_streams_t &streams, int argc, cons
     arg_iterator_t aiter(argv, optind, streams);
     while (const wcstring *arg = aiter.nextstr()) {
         wcstring sep = aiter.want_newline() ? L"\n" : L"";
-        streams.out.append(escape_string(*arg, flags, opts.escape_style) + sep);
+        streams.out()->append(escape_string(*arg, flags, opts.escape_style) + sep);
         nesc++;
     }
 
@@ -723,7 +723,7 @@ static int string_escape(parser_t &parser, io_streams_t &streams, int argc, cons
     DIE("should never reach this statement");
 }
 
-static int string_unescape(parser_t &parser, io_streams_t &streams, int argc,
+static int string_unescape(const parser_t &parser, io_streams_t &streams, int argc,
                            const wchar_t **argv) {
     options_t opts;
     opts.no_quoted_valid = true;
@@ -739,7 +739,7 @@ static int string_unescape(parser_t &parser, io_streams_t &streams, int argc,
     while (const wcstring *arg = aiter.nextstr()) {
         wcstring sep = aiter.want_newline() ? L"\n" : L"";
         if (auto result = unescape_string(*arg, flags, opts.escape_style)) {
-            streams.out.append(*result + sep);
+            streams.out()->append(*result + sep);
             nesc++;
         }
     }
@@ -748,7 +748,7 @@ static int string_unescape(parser_t &parser, io_streams_t &streams, int argc,
     DIE("should never reach this statement");
 }
 
-static int string_join_maybe0(parser_t &parser, io_streams_t &streams, int argc,
+static int string_join_maybe0(const parser_t &parser, io_streams_t &streams, int argc,
                               const wchar_t **argv, bool is_join0) {
     options_t opts;
     opts.quiet_valid = true;
@@ -765,9 +765,9 @@ static int string_join_maybe0(parser_t &parser, io_streams_t &streams, int argc,
             if (opts.no_empty && arg->empty()) continue;
 
             if (nargs > 0) {
-                streams.out.append(sep);
+                streams.out()->append(sep);
             }
-            streams.out.append(*arg);
+            streams.out()->append(*arg);
         } else if (nargs > 1) {
             return STATUS_CMD_OK;
         }
@@ -775,24 +775,24 @@ static int string_join_maybe0(parser_t &parser, io_streams_t &streams, int argc,
     }
     if (nargs > 0 && !opts.quiet) {
         if (is_join0) {
-            streams.out.push(L'\0');
+            streams.out()->push(L'\0');
         } else if (aiter.want_newline()) {
-            streams.out.push(L'\n');
+            streams.out()->push(L'\n');
         }
     }
 
     return nargs > 1 ? STATUS_CMD_OK : STATUS_CMD_ERROR;
 }
 
-static int string_join(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int string_join(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     return string_join_maybe0(parser, streams, argc, argv, false /* is_join0 */);
 }
 
-static int string_join0(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int string_join0(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     return string_join_maybe0(parser, streams, argc, argv, true /* is_join0 */);
 }
 
-static int string_length(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int string_length(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     options_t opts;
     opts.quiet_valid = true;
     opts.visible_valid = true;
@@ -817,7 +817,7 @@ static int string_length(parser_t &parser, io_streams_t &streams, int argc, cons
                     nnonempty++;
                 }
                 if (!opts.quiet) {
-                    streams.out.append(to_string(max) + L"\n");
+                    streams.out()->append(to_string(max) + L"\n");
                 } else if (nnonempty > 0) {
                     return STATUS_CMD_OK;
                 }
@@ -828,7 +828,7 @@ static int string_length(parser_t &parser, io_streams_t &streams, int argc, cons
                 nnonempty++;
             }
             if (!opts.quiet) {
-                streams.out.append(to_string(n) + L"\n");
+                streams.out()->append(to_string(n) + L"\n");
             } else if (nnonempty > 0) {
                 return STATUS_CMD_OK;
             }
@@ -892,9 +892,9 @@ class wildcard_matcher_t final : public string_matcher_t {
 
             if (!opts.quiet) {
                 if (opts.index) {
-                    streams.out.append_format(L"1 %lu\n", arg.length());
+                    streams.out()->append(format_string(L"1 %lu\n", arg.length()));
                 } else {
-                    streams.out.append(arg + L"\n");
+                    streams.out()->append(arg + L"\n");
                 }
             }
         }
@@ -923,8 +923,8 @@ static bool validate_capture_group_names(const std::vector<wcstring> &capture_gr
                                          io_streams_t &streams) {
     for (const wcstring &name : capture_group_names) {
         if (env_var_t::flags_for(name.c_str()) & env_var_t::flag_read_only) {
-            streams.err.append_format(
-                L"Modification of read-only variable \"%ls\" is not allowed\n", name.c_str());
+            streams.err()->append(format_string(
+                L"Modification of read-only variable \"%ls\" is not allowed\n", name.c_str()));
             return false;
         }
     }
@@ -975,9 +975,9 @@ class regex_matcher_t final : public string_matcher_t {
         if (!mrange.has_value()) {
             if (opts.invert_match && !opts.quiet) {
                 if (opts.index) {
-                    streams.out.append_format(L"1 %lu\n", arg.length());
+                    streams.out()->append(format_string(L"1 %lu\n", arg.length()));
                 } else {
-                    streams.out.append(arg + L"\n");
+                    streams.out()->append(arg + L"\n");
                 }
             }
 
@@ -987,7 +987,7 @@ class regex_matcher_t final : public string_matcher_t {
         }
 
         if (opts.entire && !opts.quiet) {
-            streams.out.append(arg + L"\n");
+            streams.out()->append(arg + L"\n");
         }
 
         // If we have groups-only, we skip the first match, which is the full one.
@@ -996,9 +996,10 @@ class regex_matcher_t final : public string_matcher_t {
             maybe_t<match_range_t> cg = this->regex_.group(match_data_, j);
             if (cg.has_value() && !opts.quiet) {
                 if (opts.index) {
-                    streams.out.append_format(L"%lu %lu\n", cg->begin + 1, cg->end - cg->begin);
+                    streams.out()->append(
+                        format_string(L"%lu %lu\n", cg->begin + 1, cg->end - cg->begin));
                 } else {
-                    streams.out.append(arg.substr(cg->begin, cg->end - cg->begin) + L"\n");
+                    streams.out()->append(arg.substr(cg->begin, cg->end - cg->begin) + L"\n");
                 }
             }
         }
@@ -1054,7 +1055,7 @@ class regex_matcher_t final : public string_matcher_t {
 };
 }  // namespace
 
-static int string_match(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int string_match(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     const wchar_t *cmd = argv[0];
 
     options_t opts;
@@ -1072,20 +1073,20 @@ static int string_match(parser_t &parser, io_streams_t &streams, int argc, const
     const wchar_t *pattern = opts.arg1;
 
     if (opts.entire && opts.index) {
-        streams.err.append_format(BUILTIN_ERR_COMBO2, cmd,
-                                  _(L"--entire and --index are mutually exclusive"));
+        streams.err()->append(format_string(BUILTIN_ERR_COMBO2, cmd,
+                                             _(L"--entire and --index are mutually exclusive")));
         return STATUS_INVALID_ARGS;
     }
 
     if (opts.invert_match && opts.groups_only) {
-        streams.err.append_format(BUILTIN_ERR_COMBO2, cmd,
-                                  _(L"--invert and --groups-only are mutually exclusive"));
+        streams.err()->append(format_string(
+            BUILTIN_ERR_COMBO2, cmd, _(L"--invert and --groups-only are mutually exclusive")));
         return STATUS_INVALID_ARGS;
     }
 
     if (opts.entire && opts.groups_only) {
-        streams.err.append_format(BUILTIN_ERR_COMBO2, cmd,
-                                  _(L"--entire and --groups-only are mutually exclusive"));
+        streams.err()->append(format_string(
+            BUILTIN_ERR_COMBO2, cmd, _(L"--entire and --groups-only are mutually exclusive")));
         return STATUS_INVALID_ARGS;
     }
 
@@ -1117,7 +1118,7 @@ static int string_match(parser_t &parser, io_streams_t &streams, int argc, const
     return matcher->match_count() > 0 ? STATUS_CMD_OK : STATUS_CMD_ERROR;
 }
 
-static int string_pad(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int string_pad(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     options_t opts;
     opts.char_to_pad_valid = true;
     opts.right_valid = true;
@@ -1170,7 +1171,7 @@ static int string_pad(parser_t &parser, io_streams_t &streams, int argc, const w
         if (aiter_width.want_newline()) {
             padded.push_back(L'\n');
         }
-        streams.out.append(padded);
+        streams.out()->append(padded);
     }
 
     return STATUS_CMD_OK;
@@ -1278,7 +1279,7 @@ bool literal_replacer_t::replace_matches(const wcstring &arg, bool want_newline)
 
     if (!opts.quiet && (!opts.filter || replacement_occurred)) {
         wcstring sep = want_newline ? L"\n" : L"";
-        streams.out.append(result + sep);
+        streams.out()->append(result + sep);
     }
 
     return true;
@@ -1306,14 +1307,14 @@ bool regex_replacer_t::replace_matches(const wcstring &arg, bool want_newline) {
         bool replacement_occurred = repl_count > 0;
         if (!opts.quiet && (!opts.filter || replacement_occurred)) {
             wcstring sep = want_newline ? L"\n" : L"";
-            streams.out.append(*result + sep);
+            streams.out()->append(*result + sep);
         }
         total_replaced += repl_count;
     }
     return result.has_value();
 }
 
-static int string_replace(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int string_replace(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     options_t opts;
     opts.all_valid = true;
     opts.filter_valid = true;
@@ -1349,7 +1350,7 @@ static int string_replace(parser_t &parser, io_streams_t &streams, int argc, con
     return replacer->replace_count() > 0 ? STATUS_CMD_OK : STATUS_CMD_ERROR;
 }
 
-static int string_split_maybe0(parser_t &parser, io_streams_t &streams, int argc,
+static int string_split_maybe0(const parser_t &parser, io_streams_t &streams, int argc,
                                const wchar_t **argv, bool is_split0) {
     const wchar_t *cmd = argv[0];
     options_t opts;
@@ -1365,8 +1366,8 @@ static int string_split_maybe0(parser_t &parser, io_streams_t &streams, int argc
     if (retval != STATUS_CMD_OK) return retval;
 
     if (opts.fields.empty() && opts.allow_empty) {
-        streams.err.append_format(BUILTIN_ERR_COMBO2, cmd,
-                                  _(L"--allow-empty is only valid with --fields"));
+        streams.err()->append(format_string(BUILTIN_ERR_COMBO2, cmd,
+                                             _(L"--allow-empty is only valid with --fields")));
         return STATUS_INVALID_ARGS;
     }
 
@@ -1422,13 +1423,14 @@ static int string_split_maybe0(parser_t &parser, io_streams_t &streams, int argc
                 }
                 for (const auto &field : opts.fields) {
                     if (field - 1 < (long)splits.size()) {
-                        streams.out.append_with_separation(splits.at(field - 1),
-                                                           separation_type_t::explicitly, true);
+                        streams.out()->append_with_separation(splits.at(field - 1),
+                                                              separation_type_t::explicitly, true);
                     }
                 }
             } else {
                 for (const wcstring &split : splits) {
-                    streams.out.append_with_separation(split, separation_type_t::explicitly, true);
+                    streams.out()->append_with_separation(split, separation_type_t::explicitly,
+                                                          true);
                 }
             }
         }
@@ -1437,15 +1439,15 @@ static int string_split_maybe0(parser_t &parser, io_streams_t &streams, int argc
     return split_count > arg_count ? STATUS_CMD_OK : STATUS_CMD_ERROR;
 }
 
-static int string_split(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int string_split(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     return string_split_maybe0(parser, streams, argc, argv, false /* is_split0 */);
 }
 
-static int string_split0(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int string_split0(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     return string_split_maybe0(parser, streams, argc, argv, true /* is_split0 */);
 }
 
-static int string_collect(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int string_collect(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     options_t opts;
     opts.allow_empty_valid = true;
     opts.no_trim_newlines_valid = true;
@@ -1463,8 +1465,8 @@ static int string_collect(parser_t &parser, io_streams_t &streams, int argc, con
                 len -= 1;
             }
         }
-        streams.out.append_with_separation(s, len, separation_type_t::explicitly,
-                                           aiter.want_newline());
+        streams.out()->append_with_separation(s, len, separation_type_t::explicitly,
+                                              aiter.want_newline());
         appended += len;
     }
 
@@ -1473,7 +1475,7 @@ static int string_collect(parser_t &parser, io_streams_t &streams, int argc, con
     // echo (true | string collect --allow-empty)"bar"
     // prints "bar".
     if (opts.allow_empty && appended == 0) {
-        streams.out.append_with_separation(
+        streams.out()->append_with_separation(
             L"", 0, separation_type_t::explicitly,
             true /* historical behavior is to always print a newline */);
     }
@@ -1481,7 +1483,7 @@ static int string_collect(parser_t &parser, io_streams_t &streams, int argc, con
     return appended > 0 ? STATUS_CMD_OK : STATUS_CMD_ERROR;
 }
 
-static int string_repeat(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int string_repeat(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     options_t opts;
     opts.count_valid = true;
     opts.max_valid = true;
@@ -1493,7 +1495,7 @@ static int string_repeat(parser_t &parser, io_streams_t &streams, int argc, cons
     if (opts.max == 0 && opts.count == 0) {
         // XXX: This used to be allowed, but returned 1.
         // Keep it that way for now instead of adding an error.
-        // streams.err.append(L"Count or max must be greater than zero");
+        // streams.err()->append(L"Count or max must be greater than zero");
         return STATUS_CMD_ERROR;
     }
 
@@ -1514,7 +1516,7 @@ static int string_repeat(parser_t &parser, io_streams_t &streams, int argc, cons
         }
 
         if (!first && !opts.quiet) {
-            streams.out.push(L'\n');
+            streams.out()->push(L'\n');
         }
         first = false;
 
@@ -1553,14 +1555,14 @@ static int string_repeat(parser_t &parser, io_streams_t &streams, int argc, cons
 
             if (chunk.length() >= chunk_size) {
                 // We hit the chunk size, write it repeatedly until we can't anymore.
-                streams.out.append(chunk);
+                streams.out()->append(chunk);
                 while (i >= chunk.length()) {
-                    streams.out.append(chunk);
+                    streams.out()->append(chunk);
                     // We can easily be asked to write *a lot* of data,
                     // so we need to check every so often if the pipe has been closed.
                     // If we didn't, running `string repeat -n LARGENUMBER foo | pv`
                     // and pressing ctrl-c seems to hang.
-                    if (streams.out.flush_and_check_error() != STATUS_CMD_OK) {
+                    if (streams.out()->flush_and_check_error() != STATUS_CMD_OK) {
                         return STATUS_CMD_ERROR;
                     }
                     i -= chunk.length();
@@ -1570,19 +1572,19 @@ static int string_repeat(parser_t &parser, io_streams_t &streams, int argc, cons
         }
         // Flush the remainder.
         if (!chunk.empty()) {
-            streams.out.append(chunk);
+            streams.out()->append(chunk);
         }
     }
 
     // Historical behavior is to never append a newline if all strings were empty.
     if (!opts.quiet && !opts.no_newline && !all_empty && aiter.want_newline()) {
-        streams.out.push(L'\n');
+        streams.out()->push(L'\n');
     }
 
     return all_empty ? STATUS_CMD_ERROR : STATUS_CMD_OK;
 }
 
-static int string_sub(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int string_sub(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     const wchar_t *cmd = argv[0];
 
     options_t opts;
@@ -1596,8 +1598,8 @@ static int string_sub(parser_t &parser, io_streams_t &streams, int argc, const w
     if (retval != STATUS_CMD_OK) return retval;
 
     if (opts.length != -1 && opts.end != 0) {
-        streams.err.append_format(BUILTIN_ERR_COMBO2, cmd,
-                                  _(L"--end and --length are mutually exclusive"));
+        streams.err()->append(format_string(BUILTIN_ERR_COMBO2, cmd,
+                                             _(L"--end and --length are mutually exclusive")));
         return STATUS_INVALID_ARGS;
     }
 
@@ -1637,7 +1639,7 @@ static int string_sub(parser_t &parser, io_streams_t &streams, int argc, const w
 
         // Note that std::string permits count to extend past end of string.
         if (!opts.quiet) {
-            streams.out.append(s->substr(pos, count) + sep);
+            streams.out()->append(s->substr(pos, count) + sep);
         }
         nsub++;
         if (opts.quiet) return STATUS_CMD_OK;
@@ -1646,7 +1648,7 @@ static int string_sub(parser_t &parser, io_streams_t &streams, int argc, const w
     return nsub > 0 ? STATUS_CMD_OK : STATUS_CMD_ERROR;
 }
 
-static int string_shorten(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int string_shorten(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     options_t opts;
     opts.chars_to_shorten_valid = true;
     opts.chars_to_trim = get_ellipsis_str();
@@ -1678,7 +1680,7 @@ static int string_shorten(parser_t &parser, io_streams_t &streams, int argc, con
         //     echo whatever
         // end
         while (const wcstring *arg = aiter_width.nextstr()) {
-            streams.out.append(*arg + L"\n");
+            streams.out()->append(*arg + L"\n");
         }
         return STATUS_CMD_ERROR;
     }
@@ -1763,12 +1765,12 @@ static int string_shorten(parser_t &parser, io_streams_t &streams, int argc, con
             }
 
             if (pos == 0) {
-                streams.out.append(line + L"\n");
+                streams.out()->append(line + L"\n");
             } else {
                 // We have an ellipsis, construct our string and print it.
                 nsub++;
                 out = ell + out + L'\n';
-                streams.out.append(out);
+                streams.out()->append(out);
             }
             continue;
         } else {
@@ -1806,13 +1808,13 @@ static int string_shorten(parser_t &parser, io_streams_t &streams, int argc, con
         }
 
         if (pos == line.size()) {
-            streams.out.append(line + L"\n");
+            streams.out()->append(line + L"\n");
         } else {
             nsub++;
             wcstring newl = line.substr(0, pos);
             newl.append(ell);
             newl.push_back(L'\n');
-            streams.out.append(newl);
+            streams.out()->append(newl);
         }
     }
 
@@ -1820,7 +1822,7 @@ static int string_shorten(parser_t &parser, io_streams_t &streams, int argc, con
     return nsub > 0 ? STATUS_CMD_OK : STATUS_CMD_ERROR;
 }
 
-static int string_trim(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int string_trim(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     options_t opts;
     opts.chars_to_trim_valid = true;
     opts.left_valid = true;
@@ -1854,7 +1856,7 @@ static int string_trim(parser_t &parser, io_streams_t &streams, int argc, const 
         assert(begin <= end && end <= arg->size());
         ntrim += arg->size() - (end - begin);
         if (!opts.quiet) {
-            streams.out.append(wcstring(*arg, begin, end - begin) + sep);
+            streams.out()->append(wcstring(*arg, begin, end - begin) + sep);
         } else if (ntrim > 0) {
             return STATUS_CMD_OK;
         }
@@ -1864,7 +1866,7 @@ static int string_trim(parser_t &parser, io_streams_t &streams, int argc, const 
 }
 
 // A helper function for lower and upper.
-static int string_transform(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv,
+static int string_transform(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv,
                             std::wint_t (*func)(std::wint_t)) {
     options_t opts;
     opts.quiet_valid = true;
@@ -1880,7 +1882,7 @@ static int string_transform(parser_t &parser, io_streams_t &streams, int argc, c
         if (transformed != *arg) n_transformed++;
         if (!opts.quiet) {
             wcstring sep = aiter.want_newline() ? L"\n" : L"";
-            streams.out.append(transformed + sep);
+            streams.out()->append(transformed + sep);
         } else if (n_transformed > 0) {
             return STATUS_CMD_OK;
         }
@@ -1890,19 +1892,19 @@ static int string_transform(parser_t &parser, io_streams_t &streams, int argc, c
 }
 
 /// Implementation of `string lower`.
-static int string_lower(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int string_lower(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     return string_transform(parser, streams, argc, argv, std::towlower);
 }
 
 /// Implementation of `string upper`.
-static int string_upper(parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
+static int string_upper(const parser_t &parser, io_streams_t &streams, int argc, const wchar_t **argv) {
     return string_transform(parser, streams, argc, argv, std::towupper);
 }
 
 // Keep sorted alphabetically
 static constexpr const struct string_subcommand {
     const wchar_t *name;
-    int (*handler)(parser_t &, io_streams_t &, int argc,  //!OCLINT(unused param)
+    int (*handler)(const parser_t &, io_streams_t &, int argc,  //!OCLINT(unused param)
                    const wchar_t **argv);                 //!OCLINT(unused param)
 } string_subcommands[] = {
     {L"collect", &string_collect},   {L"escape", &string_escape},   {L"join", &string_join},
@@ -1916,11 +1918,11 @@ ASSERT_SORTED_BY_NAME(string_subcommands);
 }  // namespace
 
 /// The string builtin, for manipulating strings.
-maybe_t<int> builtin_string(parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
+maybe_t<int> builtin_string(const parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
     const wchar_t *cmd = argv[0];
     int argc = builtin_count_args(argv);
     if (argc <= 1) {
-        streams.err.append_format(BUILTIN_ERR_MISSING_SUBCMD, cmd);
+        streams.err()->append(format_string(BUILTIN_ERR_MISSING_SUBCMD, cmd));
         builtin_print_error_trailer(parser, streams.err, L"string");
         return STATUS_INVALID_ARGS;
     }
@@ -1933,7 +1935,7 @@ maybe_t<int> builtin_string(parser_t &parser, io_streams_t &streams, const wchar
     const wchar_t *subcmd_name = argv[1];
     const auto *subcmd = get_by_sorted_name(subcmd_name, string_subcommands);
     if (!subcmd) {
-        streams.err.append_format(BUILTIN_ERR_INVALID_SUBCMD, cmd, subcmd_name);
+        streams.err()->append(format_string(BUILTIN_ERR_INVALID_SUBCMD, cmd, subcmd_name));
         builtin_print_error_trailer(parser, streams.err, L"string");
         return STATUS_INVALID_ARGS;
     }

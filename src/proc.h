@@ -22,10 +22,20 @@
 #include "cxx.h"
 #include "maybe.h"
 #include "parse_tree.h"
+#include "parser.h"
 #include "redirection.h"
 #include "topic_monitor.h"
-#include "wait_handle.h"
 
+#if INCLUDE_RUST_HEADERS
+#include "proc.rs.h"
+#else
+struct JobRefFfi;
+struct JobGroupRefFfi;
+#endif
+
+struct Parser;
+
+#if 0
 struct statuses_t;
 
 /// Types of processes.
@@ -356,7 +366,6 @@ class process_t {
 
 using process_ptr_t = std::unique_ptr<process_t>;
 using process_list_t = std::vector<process_ptr_t>;
-class parser_t;
 
 struct RustFFIProcList {
     process_ptr_t *procs;
@@ -530,7 +539,7 @@ class job_t : noncopyable_t {
     bool posts_job_exit_events() const;
 
     /// Run ourselves. Returning once we complete or stop.
-    void continue_job(parser_t &parser);
+    void continue_job(const parser_t &parser);
 
     /// Prepare to resume a stopped job by sending SIGCONT and clearing the stopped flag.
     /// \return true on success, false if we failed to send the signal.
@@ -588,7 +597,7 @@ void set_job_control_mode(job_control_t mode);
 /// Notify the user about stopped or terminated jobs, and delete completed jobs from the job list.
 /// If \p interactive is set, allow removing interactive jobs; otherwise skip them.
 /// \return whether text was printed to stdout.
-bool job_reap(parser_t &parser, bool interactive);
+bool job_reap(const parser_t &parser, bool interactive);
 
 /// \return the list of background jobs which we should warn the user about, if the user attempts to
 /// exit. An empty result (common) means no such jobs.
@@ -604,13 +613,13 @@ clock_ticks_t proc_get_jiffies(pid_t inpid);
 
 /// Update process time usage for all processes by calling the proc_get_jiffies function for every
 /// process of every job.
-void proc_update_jiffies(parser_t &parser);
+void proc_update_jiffies(const parser_t &parser);
 
 /// Initializations.
 void proc_init();
 
 /// Wait for any process finishing, or receipt of a signal.
-void proc_wait_any(parser_t &parser);
+void proc_wait_any(const parser_t &parser);
 
 /// Send SIGHUP to the list \p jobs, excepting those which are in fish's pgroup.
 void hup_jobs(const job_list_t &jobs);
@@ -621,4 +630,5 @@ void add_disowned_job(const job_t *j);
 
 bool have_proc_stat();
 
+#endif
 #endif

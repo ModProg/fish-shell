@@ -7,18 +7,23 @@ use crate::fds::{make_autoclose_pipes, wopen_cloexec, AutoCloseFd, PIPE_ERROR};
 use crate::ffi;
 use crate::flog::{should_flog, FLOG, FLOGF};
 use crate::global_safety::RelaxedAtomicBool;
-use crate::job_group::JobGroup;
 use crate::path::path_apply_working_directory;
+use crate::proc::JobGroupRef;
 use crate::redirection::{RedirectionMode, RedirectionSpecList};
 use crate::signal::SigChecker;
 use crate::topic_monitor::topic_t;
 use crate::wchar::{wstr, WString, L};
+use crate::wchar_ffi::WCharFromFFI;
 use crate::wutil::{perror, wdirname, wstat, wwrite_to_fd};
+use cxx::CxxWString;
 use errno::Errno;
-use libc::{EAGAIN, EEXIST, EINTR, ENOENT, ENOTDIR, EPIPE, EWOULDBLOCK, O_EXCL, STDERR_FILENO};
+use libc::{
+    EAGAIN, EEXIST, EINTR, ENOENT, ENOTDIR, EPIPE, EWOULDBLOCK, O_EXCL, STDERR_FILENO,
+    STDOUT_FILENO,
+};
 use std::cell::UnsafeCell;
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, RwLock, RwLockReadGuard};
-use std::{os::fd::RawFd, rc::Rc};
+use std::os::fd::RawFd;
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use widestring_suffix::widestrs;
 
 /// separated_buffer_t represents a buffer of output from commands, prepared to be turned into a
@@ -168,7 +173,7 @@ impl SeparatedBuffer {
 }
 
 /// Describes what type of IO operation an io_data_t represents.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub enum IoMode {
     file,
     pipe,
@@ -189,6 +194,9 @@ pub trait IoData {
     fn print(&self);
     // The address of the object, for comparison.
     fn as_ptr(&self) -> *const ();
+    fn as_bufferfill(&self) -> Option<&IoBufferfill> {
+        None
+    }
 }
 
 pub struct IoClose {
@@ -333,9 +341,14 @@ pub struct IoBufferfill {
 impl IoBufferfill {
     /// Create an io_bufferfill_t which, when written from, fills a buffer with the contents.
     /// \returns nullptr on failure, e.g. too many open fds.
+    pub fn create() -> Option<Arc<IoBufferfill>> {
+        Self::create_opts(0, STDOUT_FILENO)
+    }
+    /// Create an io_bufferfill_t which, when written from, fills a buffer with the contents.
+    /// \returns nullptr on failure, e.g. too many open fds.
     ///
     /// \param target the fd which this will be dup2'd to - typically stdout.
-    pub fn create(buffer_limit: usize, target: RawFd) -> Option<Rc<IoBufferfill>> {
+    pub fn create_opts(buffer_limit: usize, target: RawFd) -> Option<Arc<IoBufferfill>> {
         assert!(target >= 0, "Invalid target fd");
 
         // Construct our pipes.
@@ -352,11 +365,15 @@ impl IoBufferfill {
         let mut buffer = Arc::new(RwLock::new(IoBuffer::new(buffer_limit)));
         begin_filling(&mut buffer, pipes.read);
         assert!(pipes.write.is_valid(), "fd is not valid");
-        Some(Rc::new(IoBufferfill {
+        Some(Arc::new(IoBufferfill {
             target,
             write_fd: pipes.write,
             buffer,
         }))
+    }
+
+    pub fn the_buffer(&self) -> &Arc<RwLock<IoBuffer>> {
+        &self.buffer
     }
 
     pub fn buffer(&self) -> RwLockReadGuard<'_, IoBuffer> {
@@ -365,7 +382,7 @@ impl IoBufferfill {
 
     /// Reset the receiver (possibly closing the write end of the pipe), and complete the fillthread
     /// of the buffer. \return the buffer.
-    pub fn finish(filler: IoBufferfill) -> SeparatedBuffer {
+    pub fn finish(filler: Arc<IoBufferfill>) -> SeparatedBuffer {
         // The io filler is passed in. This typically holds the only instance of the write side of the
         // pipe used by the buffer's fillthread (except for that side held by other processes). Get the
         // buffer out of the bufferfill and clear the shared_ptr; this will typically widow the pipe.
@@ -397,6 +414,9 @@ impl IoData for IoBufferfill {
     }
     fn as_ptr(&self) -> *const () {
         (self as *const Self).cast()
+    }
+    fn as_bufferfill(&self) -> Option<&IoBufferfill> {
+        Some(self)
     }
 }
 
@@ -582,19 +602,25 @@ fn begin_filling(iobuffer: &mut Arc<RwLock<IoBuffer>>, fd: AutoCloseFd) {
         fd_monitor().add(FdMonitorItem::new(fd, None, item_callback));
 }
 
-pub type IoDataRef = Rc<dyn IoData>;
+pub type IoDataRef = Arc<dyn IoData>;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct IoChain(pub Vec<IoDataRef>);
+
+unsafe impl cxx::ExternType for IoChain {
+    type Id = cxx::type_id!("IoChain");
+    type Kind = cxx::kind::Opaque;
+}
 
 impl IoChain {
     pub fn new() -> Self {
         Default::default()
     }
-    pub fn remove(&mut self, element: &IoDataRef) {
-        let element = Rc::as_ptr(element) as *const ();
+    pub fn remove(&mut self, element: &dyn IoData) {
+        let element = element as *const _;
+        let element = element as *const ();
         self.0.retain(|e| {
-            let e = Rc::as_ptr(e) as *const ();
+            let e = Arc::as_ptr(e) as *const ();
             !std::ptr::eq(e, element)
         });
     }
@@ -621,12 +647,12 @@ impl IoChain {
             match spec.mode {
                 RedirectionMode::fd => {
                     if spec.is_close() {
-                        self.push(Rc::new(IoClose::new(spec.fd)));
+                        self.push(Arc::new(IoClose::new(spec.fd)));
                     } else {
                         let target_fd = spec
                             .get_target_as_fd()
                             .expect("fd redirection should have been validated already");
-                        self.push(Rc::new(IoFd::new(spec.fd, target_fd)));
+                        self.push(Arc::new(IoFd::new(spec.fd, target_fd)));
                     }
                 }
                 _ => {
@@ -649,7 +675,7 @@ impl IoChain {
                                     let mut dname: &wstr = &spec.target;
                                     while !dname.is_empty() {
                                         let next: &wstr = wdirname(dname);
-                                        if let Some(md) = wstat(next) {
+                                        if let Ok(md) = wstat(next) {
                                             if !md.is_dir() {
                                                 FLOGF!(
                                                     warning,
@@ -675,11 +701,11 @@ impl IoChain {
                         // If opening a file fails, insert a closed FD instead of the file redirection
                         // and return false. This lets execution potentially recover and at least gives
                         // the shell a chance to gracefully regain control of the shell (see #7038).
-                        self.push(Rc::new(IoClose::new(spec.fd)));
+                        self.push(Arc::new(IoClose::new(spec.fd)));
                         have_error = true;
                         continue;
                     }
-                    self.push(Rc::new(IoFile::new(spec.fd, file)));
+                    self.push(Arc::new(IoFile::new(spec.fd, file)));
                 }
             }
         }
@@ -773,9 +799,16 @@ pub trait OutputStream {
     }
 }
 
+pub type OutputStreamRef = Arc<RwLock<dyn OutputStream>>;
+
 /// A null output stream which ignores all writes.
 pub struct NullOutputStream {}
 
+impl NullOutputStream {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
 impl OutputStream for NullOutputStream {
     fn append(&mut self, _s: &wstr) -> bool {
         true
@@ -845,6 +878,11 @@ impl OutputStream for FdOutputStream {
 pub struct StringOutputStream {
     contents: WString,
 }
+impl StringOutputStream {
+    pub fn new() -> Self {
+        Default::default()
+    }
+}
 impl OutputStream for StringOutputStream {
     fn append(&mut self, s: &wstr) -> bool {
         self.contents.push_utfstr(s);
@@ -891,8 +929,8 @@ impl OutputStream for BufferedOutputStream {
 
 pub struct IoStreams<'a> {
     // Streams for out and err.
-    pub out: &'a dyn OutputStream,
-    pub err: &'a dyn OutputStream,
+    pub out: &'a mut dyn OutputStream,
+    pub err: &'a mut dyn OutputStream,
 
     // fd representing stdin. This is not closed by the destructor.
     // Note: if stdin is explicitly closed by `<&-` then this is -1!
@@ -914,16 +952,21 @@ pub struct IoStreams<'a> {
     pub err_is_redirected: bool,
 
     // Actual IO redirections. This is only used by the source builtin. Unowned.
-    io_chain: *const IoChain,
+    pub io_chain: *mut IoChain,
 
     // The job group of the job, if any. This enables builtins which run more code like eval() to
     // share pgid.
     // FIXME: this is awkwardly placed.
-    job_group: Option<Rc<JobGroup>>,
+    pub job_group: Option<JobGroupRef>,
+}
+
+unsafe impl cxx::ExternType for IoStreams<'_> {
+    type Id = cxx::type_id!("IoStreams");
+    type Kind = cxx::kind::Opaque;
 }
 
 impl<'a> IoStreams<'a> {
-    pub fn new(out: &'a dyn OutputStream, err: &'a dyn OutputStream) -> Self {
+    pub fn new(out: &'a mut dyn OutputStream, err: &'a mut dyn OutputStream) -> Self {
         IoStreams {
             out,
             err,
@@ -933,7 +976,7 @@ impl<'a> IoStreams<'a> {
             err_is_piped: false,
             out_is_redirected: false,
             err_is_redirected: false,
-            io_chain: std::ptr::null(),
+            io_chain: std::ptr::null_mut(),
             job_group: None,
         }
     }
@@ -957,4 +1000,54 @@ fn fd_monitor() -> &'static mut FdMonitor {
     }
     let ptr: *mut FdMonitor = unsafe { (*FDM).get() };
     unsafe { &mut *ptr }
+}
+
+#[cxx::bridge]
+mod io_ffi {
+    extern "Rust" {
+        type IoChain;
+        type IoStreams<'a>;
+        type DynOutputStreamFfi<'a>;
+
+        fn new_io_chain() -> Box<IoChain>;
+
+        #[cxx_name = "out"]
+        unsafe fn out_ffi<'a>(self: &'a mut IoStreams<'a>) -> Box<DynOutputStreamFfi<'a>>;
+        #[cxx_name = "err"]
+        unsafe fn err_ffi<'a>(self: &'a mut IoStreams<'a>) -> Box<DynOutputStreamFfi<'a>>;
+        #[cxx_name = "out_is_redirected"]
+        unsafe fn out_is_redirected_ffi<'a>(self: &IoStreams<'a>) -> bool;
+
+        #[cxx_name = "append"]
+        unsafe fn append_ffi<'a>(self: &mut DynOutputStreamFfi<'a>, s: &CxxWString) -> bool;
+        #[cxx_name = "push"]
+        unsafe fn push_ffi<'a>(self: &mut DynOutputStreamFfi<'a>, s: u32) -> bool;
+    }
+}
+
+impl<'a> IoStreams<'a> {
+    fn out_ffi(&'a mut self) -> Box<DynOutputStreamFfi<'a>> {
+        Box::new(DynOutputStreamFfi(self.out))
+    }
+    fn err_ffi(&'a mut self) -> Box<DynOutputStreamFfi<'a>> {
+        Box::new(DynOutputStreamFfi(self.err))
+    }
+    unsafe fn out_is_redirected_ffi(&self) -> bool {
+        self.out_is_redirected
+    }
+}
+
+struct DynOutputStreamFfi<'a>(&'a mut dyn OutputStream);
+
+impl<'a> DynOutputStreamFfi<'a> {
+    fn append_ffi(&mut self, s: &CxxWString) -> bool {
+        self.0.append(&s.from_ffi())
+    }
+    fn push_ffi(&mut self, s: u32) -> bool {
+        self.0.append_char(char::from_u32(s).unwrap())
+    }
+}
+
+fn new_io_chain() -> Box<IoChain> {
+    Box::new(IoChain::new())
 }

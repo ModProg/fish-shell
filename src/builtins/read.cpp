@@ -75,7 +75,7 @@ static const struct woption long_options[] = {{L"array", no_argument, 'a'},
                                               {}};
 
 static int parse_cmd_opts(read_cmd_opts_t &opts, int *optind,  //!OCLINT(high ncss method)
-                          int argc, const wchar_t **argv, parser_t &parser, io_streams_t &streams) {
+                          int argc, const wchar_t **argv, const parser_t &parser, io_streams_t &streams) {
     const wchar_t *cmd = argv[0];
     int opt;
     wgetopter_t w;
@@ -95,9 +95,10 @@ static int parse_cmd_opts(read_cmd_opts_t &opts, int *optind,  //!OCLINT(high nc
                 break;
             }
             case 'i': {
-                streams.err.append_format(_(L"%ls: usage of -i for --silent is deprecated. Please "
-                                            L"use -s or --silent instead.\n"),
-                                          cmd);
+                streams.err()->append(
+                    format_string(_(L"%ls: usage of -i for --silent is deprecated. Please "
+                                     L"use -s or --silent instead.\n"),
+                                   cmd));
                 return STATUS_INVALID_ARGS;
             }
             case L'f': {
@@ -124,13 +125,13 @@ static int parse_cmd_opts(read_cmd_opts_t &opts, int *optind,  //!OCLINT(high nc
                 opts.nchars = fish_wcstoi(w.woptarg);
                 if (errno) {
                     if (errno == ERANGE) {
-                        streams.err.append_format(_(L"%ls: Argument '%ls' is out of range\n"), cmd,
-                                                  w.woptarg);
+                        streams.err()->append(format_string(
+                            _(L"%ls: Argument '%ls' is out of range\n"), cmd, w.woptarg));
                         builtin_print_error_trailer(parser, streams.err, cmd);
                         return STATUS_INVALID_ARGS;
                     }
 
-                    streams.err.append_format(BUILTIN_ERR_NOT_NUMBER, cmd, w.woptarg);
+                    streams.err()->append(format_string(BUILTIN_ERR_NOT_NUMBER, cmd, w.woptarg));
                     builtin_print_error_trailer(parser, streams.err, cmd);
                     return STATUS_INVALID_ARGS;
                 }
@@ -196,7 +197,7 @@ static int parse_cmd_opts(read_cmd_opts_t &opts, int *optind,  //!OCLINT(high nc
 
 /// Read from the tty. This is only valid when the stream is stdin and it is attached to a tty and
 /// we weren't asked to split on null characters.
-static int read_interactive(parser_t &parser, wcstring &buff, int nchars, bool shell, bool silent,
+static int read_interactive(const parser_t &parser, wcstring &buff, int nchars, bool shell, bool silent,
                             const wchar_t *prompt, const wchar_t *right_prompt,
                             const wchar_t *commandline, int in) {
     int exit_res = STATUS_CMD_OK;
@@ -352,22 +353,23 @@ static int read_one_char_at_a_time(int fd, wcstring &buff, int nchars, bool spli
 
 /// Validate the arguments given to `read` and provide defaults where needed.
 static int validate_read_args(const wchar_t *cmd, read_cmd_opts_t &opts, int argc,
-                              const wchar_t *const *argv, parser_t &parser, io_streams_t &streams) {
+                              const wchar_t *const *argv, const parser_t &parser, io_streams_t &streams) {
     if (opts.prompt && opts.prompt_str) {
-        streams.err.append_format(_(L"%ls: Options %ls and %ls cannot be used together\n"), cmd,
-                                  L"-p", L"-P");
+        streams.err()->append(format_string(
+            _(L"%ls: Options %ls and %ls cannot be used together\n"), cmd, L"-p", L"-P"));
         builtin_print_error_trailer(parser, streams.err, cmd);
         return STATUS_INVALID_ARGS;
     }
 
     if (opts.have_delimiter && opts.one_line) {
-        streams.err.append_format(_(L"%ls: Options %ls and %ls cannot be used together\n"), cmd,
-                                  L"--delimiter", L"--line");
+        streams.err()->append(
+            format_string(_(L"%ls: Options %ls and %ls cannot be used together\n"), cmd,
+                           L"--delimiter", L"--line"));
         return STATUS_INVALID_ARGS;
     }
     if (opts.one_line && opts.split_null) {
-        streams.err.append_format(_(L"%ls: Options %ls and %ls cannot be used together\n"), cmd,
-                                  L"-z", L"--line");
+        streams.err()->append(format_string(
+            _(L"%ls: Options %ls and %ls cannot be used together\n"), cmd, L"-z", L"--line"));
         return STATUS_INVALID_ARGS;
     }
 
@@ -379,7 +381,7 @@ static int validate_read_args(const wchar_t *cmd, read_cmd_opts_t &opts, int arg
     }
 
     if ((opts.place & ENV_UNEXPORT) && (opts.place & ENV_EXPORT)) {
-        streams.err.append_format(BUILTIN_ERR_EXPUNEXP, cmd);
+        streams.err()->append(format_string(BUILTIN_ERR_EXPUNEXP, cmd));
         builtin_print_error_trailer(parser, streams.err, cmd);
         return STATUS_INVALID_ARGS;
     }
@@ -387,46 +389,48 @@ static int validate_read_args(const wchar_t *cmd, read_cmd_opts_t &opts, int arg
     if ((opts.place & ENV_LOCAL ? 1 : 0) + (opts.place & ENV_FUNCTION ? 1 : 0) +
             (opts.place & ENV_GLOBAL ? 1 : 0) + (opts.place & ENV_UNIVERSAL ? 1 : 0) >
         1) {
-        streams.err.append_format(BUILTIN_ERR_GLOCAL, cmd);
+        streams.err()->append(format_string(BUILTIN_ERR_GLOCAL, cmd));
         builtin_print_error_trailer(parser, streams.err, cmd);
         return STATUS_INVALID_ARGS;
     }
 
     if (!opts.array && argc < 1 && !opts.to_stdout) {
-        streams.err.append_format(BUILTIN_ERR_MIN_ARG_COUNT1, cmd, 1, argc);
+        streams.err()->append(format_string(BUILTIN_ERR_MIN_ARG_COUNT1, cmd, 1, argc));
         return STATUS_INVALID_ARGS;
     }
 
     if (opts.array && argc != 1) {
-        streams.err.append_format(BUILTIN_ERR_ARG_COUNT1, cmd, 1, argc);
+        streams.err()->append(format_string(BUILTIN_ERR_ARG_COUNT1, cmd, 1, argc));
         return STATUS_INVALID_ARGS;
     }
 
     if (opts.to_stdout && argc > 0) {
-        streams.err.append_format(BUILTIN_ERR_MAX_ARG_COUNT1, cmd, 0, argc);
+        streams.err()->append(format_string(BUILTIN_ERR_MAX_ARG_COUNT1, cmd, 0, argc));
         return STATUS_INVALID_ARGS;
     }
 
     if (opts.tokenize && opts.have_delimiter) {
-        streams.err.append_format(BUILTIN_ERR_COMBO2_EXCLUSIVE, cmd, L"--delimiter", L"--tokenize");
+        streams.err()->append(
+            format_string(BUILTIN_ERR_COMBO2_EXCLUSIVE, cmd, L"--delimiter", L"--tokenize"));
         return STATUS_INVALID_ARGS;
     }
 
     if (opts.tokenize && opts.one_line) {
-        streams.err.append_format(BUILTIN_ERR_COMBO2_EXCLUSIVE, cmd, L"--line", L"--tokenize");
+        streams.err()->append(
+            format_string(BUILTIN_ERR_COMBO2_EXCLUSIVE, cmd, L"--line", L"--tokenize"));
         return STATUS_INVALID_ARGS;
     }
 
     // Verify all variable names.
     for (int i = 0; i < argc; i++) {
         if (!valid_var_name(argv[i])) {
-            streams.err.append_format(BUILTIN_ERR_VARNAME, cmd, argv[i]);
+            streams.err()->append(format_string(BUILTIN_ERR_VARNAME, cmd, argv[i]));
             builtin_print_error_trailer(parser, streams.err, cmd);
             return STATUS_INVALID_ARGS;
         }
         if (env_var_t::flags_for(argv[i]) & env_var_t::flag_read_only) {
-            streams.err.append_format(_(L"%ls: %ls: cannot overwrite read-only variable"), cmd,
-                                      argv[i]);
+            streams.err()->append(
+                format_string(_(L"%ls: %ls: cannot overwrite read-only variable"), cmd, argv[i]));
             builtin_print_error_trailer(parser, streams.err, cmd);
             return STATUS_INVALID_ARGS;
         }
@@ -436,7 +440,7 @@ static int validate_read_args(const wchar_t *cmd, read_cmd_opts_t &opts, int arg
 }
 
 /// The read builtin. Reads from stdin and stores the values in environment variables.
-maybe_t<int> builtin_read(parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
+maybe_t<int> builtin_read(const parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
     const wchar_t *cmd = argv[0];
     int argc = builtin_count_args(argv);
     wcstring buff;
@@ -465,7 +469,7 @@ maybe_t<int> builtin_read(parser_t &parser, io_streams_t &streams, const wchar_t
 
     // stdin may have been explicitly closed
     if (streams.stdin_fd < 0) {
-        streams.err.append_format(_(L"%ls: stdin is closed\n"), cmd);
+        streams.err()->append(format_string(_(L"%ls: stdin is closed\n"), cmd));
         return STATUS_CMD_ERROR;
     }
 
@@ -525,7 +529,7 @@ maybe_t<int> builtin_read(parser_t &parser, io_streams_t &streams, const wchar_t
         }
 
         if (opts.to_stdout) {
-            streams.out.append(buff);
+            streams.out()->append(buff);
             return exit_res;
         }
 

@@ -5,15 +5,15 @@ use super::environment_impl::{
 use crate::abbrs::{abbrs_get_set, Abbreviation, Position};
 use crate::common::{unescape_string, UnescapeStringStyle};
 use crate::env::{EnvMode, EnvStackSetResult, EnvVar, Statuses};
-use crate::env_dispatch::env_dispatch_var_change;
+use crate::env_universal_common::{self, CallbackDataList, EnvUniversal, UniversalNotifier};
 use crate::event::Event;
-use crate::ffi::{self, env_universal_t, universal_notifier_t};
+use crate::ffi;
 use crate::flog::FLOG;
 use crate::global_safety::RelaxedAtomicBool;
 use crate::null_terminated_array::OwningNullTerminatedArray;
 use crate::path::path_make_canonical;
 use crate::wchar::{wstr, WExt, WString, L};
-use crate::wchar_ffi::{AsWstr, WCharFromFFI};
+use crate::wchar_ffi::{AsWstr, WCharFromFFI, WCharToFFI};
 use crate::wcstringutil::join_strings;
 use crate::wutil::{wgetcwd, wgettext};
 
@@ -28,20 +28,13 @@ const DFLT_FISH_HISTORY_SESSION_ID: &wstr = L!("fish");
 
 // Universal variables instance.
 lazy_static! {
-    static ref UVARS: Mutex<UniquePtr<env_universal_t>> = Mutex::new(env_universal_t::new_unique());
+    static ref UVARS: Mutex<EnvUniversal> = Mutex::new(EnvUniversal::new());
 }
 
 /// Set when a universal variable has been modified but not yet been written to disk via sync().
 static UVARS_LOCALLY_MODIFIED: RelaxedAtomicBool = RelaxedAtomicBool::new(false);
 
-/// Convert an EnvVar to an FFI env_var_t.
-pub fn env_var_to_ffi(var: Option<EnvVar>) -> cxx::UniquePtr<ffi::env_var_t> {
-    if let Some(var) = var {
-        ffi::env_var_t::new_ffi(Box::into_raw(Box::from(var)).cast()).within_unique_ptr()
-    } else {
-        cxx::UniquePtr::null()
-    }
-}
+pub type EnvironmentRef = Arc<dyn Environment>;
 
 /// An environment is read-only access to variable values.
 pub trait Environment {
@@ -107,6 +100,31 @@ impl Environment for EnvNull {
     }
 }
 
+/// A helper type for wrapping a type-erased Environment.
+pub struct EnvDyn {
+    inner: Box<dyn Environment>,
+}
+
+impl EnvDyn {
+    fn new(inner: Box<dyn Environment>) -> Self {
+        Self { inner }
+    }
+}
+
+impl Environment for EnvDyn {
+    fn getf(&self, key: &wstr, mode: EnvMode) -> Option<EnvVar> {
+        self.inner.getf(key, mode)
+    }
+
+    fn get_names(&self, flags: EnvMode) -> Vec<WString> {
+        self.inner.get_names(flags)
+    }
+
+    fn get_pwd_slash(&self) -> WString {
+        self.inner.get_pwd_slash()
+    }
+}
+
 /// An immutable environment, used in snapshots.
 pub struct EnvScoped {
     inner: EnvMutex<EnvScopedImpl>,
@@ -129,7 +147,7 @@ pub struct EnvStack {
 }
 
 impl EnvStack {
-    fn new() -> EnvStack {
+    pub fn new() -> EnvStack {
         EnvStack {
             inner: EnvStackImpl::new(),
         }
@@ -185,7 +203,7 @@ impl EnvStack {
             // If we modified the global state, or we are principal, then dispatch changes.
             // Important to not hold the lock here.
             if ret.global_modified || self.is_principal() {
-                env_dispatch_var_change(key, self);
+                ffi::env_dispatch_var_change_ffi(&key.to_ffi() /* , self */);
             }
         }
         // Mark if we modified a uvar.
@@ -233,7 +251,7 @@ impl EnvStack {
         if ret.status == EnvStackSetResult::ENV_OK {
             if ret.global_modified || self.is_principal() {
                 // Important to not hold the lock here.
-                env_dispatch_var_change(key, self);
+                ffi::env_dispatch_var_change_ffi(&key.to_ffi() /*,  self */);
             }
         }
         if ret.uvar_modified {
@@ -260,7 +278,7 @@ impl EnvStack {
             // TODO: we would like to coalesce locale / curses changes, so that we only re-initialize
             // once.
             for key in popped {
-                env_dispatch_var_change(&key, self);
+                ffi::env_dispatch_var_change_ffi(&key.to_ffi() /*, self */);
             }
         }
     }
@@ -272,9 +290,11 @@ impl EnvStack {
 
     /// Snapshot this environment. This means returning a read-only copy. Local variables are copied
     /// but globals are shared (i.e. changes to global will be visible to this snapshot).
-    pub fn snapshot(&self) -> Box<dyn Environment> {
+    pub fn snapshot(&self) -> EnvDyn {
         let scoped = EnvScoped::from_impl(self.lock().base.snapshot());
-        Box::new(scoped)
+        EnvDyn {
+            inner: Box::new(scoped) as Box<dyn Environment>,
+        }
     }
 
     /// Synchronizes universal variable changes.
@@ -282,7 +302,7 @@ impl EnvStack {
     /// instance (that is, look for changes from other fish instances).
     /// \return a list of events for changed variables.
     #[allow(clippy::vec_box)]
-    pub fn universal_sync(&self, always: bool) -> Vec<Box<Event>> {
+    pub fn universal_sync(&self, always: bool) -> Vec<Event> {
         if UVAR_SCOPE_IS_GLOBAL.load() {
             return Vec::new();
         }
@@ -291,25 +311,23 @@ impl EnvStack {
         }
         UVARS_LOCALLY_MODIFIED.store(false);
 
-        let mut unused = autocxx::c_int(0);
-        let sync_res_ptr = uvars().as_mut().unwrap().sync_ffi().within_unique_ptr();
-        let sync_res = sync_res_ptr.as_ref().unwrap();
-        if sync_res.get_changed() {
-            universal_notifier_t::default_notifier_ffi(std::pin::Pin::new(&mut unused))
-                .post_notification();
+        let mut callbacks = CallbackDataList::new();
+        let changed = uvars().sync(&mut callbacks);
+        if changed {
+            env_universal_common::default_notifier().post_notification();
         }
         // React internally to changes to special variables like LANG, and populate on-variable events.
         let mut result = Vec::new();
         #[allow(unreachable_code)]
-        for idx in 0..sync_res.count() {
-            let name = sync_res.get_key(idx).from_ffi();
-            env_dispatch_var_change(&name, self);
-            let evt = if sync_res.get_is_erase(idx) {
+        for callback in callbacks {
+            let name = callback.key;
+            ffi::env_dispatch_var_change_ffi(&name.to_ffi() /* , self */);
+            let evt = if callback.val.is_none() {
                 Event::variable_erase(name)
             } else {
                 Event::variable_set(name)
             };
-            result.push(Box::new(evt));
+            result.push(evt);
         }
         result
     }
@@ -323,6 +341,10 @@ impl EnvStack {
     /// Access the principal variable stack, associated with the principal parser.
     pub fn principal() -> &'static EnvStackRef {
         &PRINCIPAL_STACK
+    }
+
+    pub fn set_argv(&self, argv: Vec<WString>) {
+        self.set(L!("argv"), EnvMode::LOCAL, argv);
     }
 }
 
@@ -376,33 +398,23 @@ pub fn env_init(do_uvars: bool) {
     if !do_uvars {
         UVAR_SCOPE_IS_GLOBAL.store(true);
     } else {
+        // let vars = EnvStack::principal();
+
         // Set up universal variables using the default path.
-        let callbacks = uvars()
-            .as_mut()
-            .unwrap()
-            .initialize_ffi()
-            .within_unique_ptr();
-        let vars = EnvStack::principal();
-        let callbacks = callbacks.as_ref().unwrap();
-        for idx in 0..callbacks.count() {
-            let name = callbacks.get_key(idx).from_ffi();
-            env_dispatch_var_change(&name, vars);
+        let mut callbacks = CallbackDataList::new();
+        uvars().initialize(&mut callbacks);
+        for callback in callbacks {
+            ffi::env_dispatch_var_change_ffi(&callback.key.to_ffi() /* , vars */);
         }
 
         // Do not import variables that have the same name and value as
         // an exported universal variable. See issues #5258 and #5348.
-        let mut table = uvars()
-            .as_ref()
-            .unwrap()
-            .get_table_ffi()
-            .within_unique_ptr();
-        for idx in 0..table.count() {
-            // autocxx gets confused when a value goes Rust -> Cxx -> Rust.
-            let uvar = table.as_mut().unwrap().get_var(idx).from_ffi();
+        let uvars_locked = uvars();
+        let table = uvars_locked.get_table();
+        for (name, uvar) in table {
             if !uvar.exports() {
                 continue;
             }
-            let name: &wstr = table.get_name(idx).as_wstr();
 
             // Look for a global exported variable with the same name.
             let global = EnvStack::globals().getf(name, EnvMode::GLOBAL | EnvMode::EXPORT);
@@ -417,15 +429,13 @@ pub fn env_init(do_uvars: bool) {
         let prefix_len = prefix.char_count();
         let from_universal = true;
         let mut abbrs = abbrs_get_set();
-        for idx in 0..table.count() {
-            let name: &wstr = table.get_name(idx).as_wstr();
+        for (name, uvar) in table {
             if !name.starts_with(prefix) {
                 continue;
             }
             let escaped_name = name.slice_from(prefix_len);
             if let Some(name) = unescape_string(escaped_name, UnescapeStringStyle::Var) {
                 let key = name.clone();
-                let uvar = table.get_var(idx).from_ffi();
                 let replacement: WString = join_strings(uvar.as_list(), ' ');
                 abbrs.add(Abbreviation::new(
                     name,
@@ -435,6 +445,52 @@ pub fn env_init(do_uvars: bool) {
                     from_universal,
                 ));
             }
+        }
+    }
+}
+/// A test environment that knows about PWD.
+// TODO Post-FFI: this should be cfg(test).
+pub mod test {
+    use crate::env::{EnvMode, EnvVar, EnvVarFlags, Environment};
+    use crate::wchar::{wstr, WString};
+    use crate::wutil::wgetcwd;
+    use std::collections::HashMap;
+    use widestring_suffix::widestrs;
+
+    /// An environment built around an std::map.
+    #[derive(Default)]
+    pub struct TestEnvironment {
+        pub vars: HashMap<WString, WString>,
+    }
+    impl Environment for TestEnvironment {
+        fn getf(&self, name: &wstr, mode: EnvMode) -> Option<EnvVar> {
+            self.vars
+                .get(name)
+                .map(|value| EnvVar::new(value.clone(), EnvVarFlags::default()))
+        }
+        fn get_names(&self, flags: EnvMode) -> Vec<WString> {
+            self.vars.keys().cloned().collect()
+        }
+    }
+    #[derive(Default)]
+    pub struct PwdEnvironment {
+        pub parent: TestEnvironment,
+    }
+    #[widestrs]
+    impl Environment for PwdEnvironment {
+        fn getf(&self, name: &wstr, mode: EnvMode) -> Option<EnvVar> {
+            if name == "PWD"L {
+                return Some(EnvVar::new(wgetcwd(), EnvVarFlags::default()));
+            }
+            self.parent.getf(name, mode)
+        }
+
+        fn get_names(&self, flags: EnvMode) -> Vec<WString> {
+            let mut res = self.parent.get_names(flags);
+            if !res.iter().any(|n| n == "PWD"L) {
+                res.push("PWD"L.to_owned());
+            }
+            res
         }
     }
 }

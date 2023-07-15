@@ -444,6 +444,13 @@ pub trait List: Node {
     fn is_empty(&self) -> bool {
         self.contents().is_empty()
     }
+    /// Iteration support.
+    fn iter(&self) -> std::slice::Iter<Box<Self::ContentsNode>> {
+        self.contents().iter()
+    }
+    fn get(&self, index: usize) -> Option<&Self::ContentsNode> {
+        self.contents().get(index).map(|b| &**b)
+    }
 }
 
 /// Implement the node trait.
@@ -626,13 +633,11 @@ macro_rules! define_list_node {
                 &mut self.list_contents
             }
         }
-        impl $name {
-            /// Iteration support.
-            pub fn iter(&self) -> impl Iterator<Item = &<$name as List>::ContentsNode> {
-                self.contents().iter().map(|b| &**b)
-            }
-            pub fn get(&self, index: usize) -> Option<&$contents> {
-                self.contents().get(index).map(|b| &**b)
+        impl<'a> IntoIterator for &'a $name {
+            type Item = &'a Box<$contents>;
+            type IntoIter = std::slice::Iter<'a, Box<$contents>>;
+            fn into_iter(self) -> Self::IntoIter {
+                self.contents().into_iter()
             }
         }
         impl Index<usize> for $name {
@@ -4407,6 +4412,16 @@ unsafe impl ExternType for Ast {
     type Kind = cxx::kind::Opaque;
 }
 
+unsafe impl ExternType for DecoratedStatement {
+    type Id = type_id!("DecoratedStatement");
+    type Kind = cxx::kind::Opaque;
+}
+
+unsafe impl ExternType for BlockStatement {
+    type Id = type_id!("BlockStatement");
+    type Kind = cxx::kind::Opaque;
+}
+
 impl Ast {
     fn top_ffi(&self) -> Box<NodeFfi> {
         Box::new(NodeFfi::new(self.top.as_node()))
@@ -4467,11 +4482,6 @@ impl Statement {
     fn contents(&self) -> &StatementVariant {
         &self.contents
     }
-}
-
-unsafe impl ExternType for BlockStatement {
-    type Id = type_id!("BlockStatement");
-    type Kind = cxx::kind::Opaque;
 }
 
 #[derive(Clone)]

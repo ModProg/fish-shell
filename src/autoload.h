@@ -1,3 +1,5 @@
+#if 0
+
 // The classes responsible for autoloading functions and completions.
 #ifndef FISH_AUTOLOAD_H
 #define FISH_AUTOLOAD_H
@@ -11,13 +13,12 @@
 #include <unordered_set>
 
 #include "common.h"
+#include "env.h"
 #include "maybe.h"
+#include "parser.h"
 #include "wutil.h"
 
 class autoload_file_cache_t;
-class environment_t;
-class parser_t;
-struct autoload_tester_t;
 
 /// autoload_t is a class that knows how to autoload .fish files from a list of directories. This
 /// is used by autoloading functions and completions. It maintains a file cache, which is
@@ -49,8 +50,6 @@ class autoload_t {
     /// This is exposed for testing.
     maybe_t<wcstring> resolve_command(const wcstring &cmd, const std::vector<wcstring> &paths);
 
-    friend autoload_tester_t;
-
    public:
     /// Construct an autoloader that loads from the paths given by \p env_var_name.
     explicit autoload_t(wcstring env_var_name);
@@ -74,7 +73,7 @@ class autoload_t {
     /// Helper to actually perform an autoload.
     /// This is a static function because it executes fish script, and so must be called without
     /// holding any particular locks.
-    static void perform_autoload(const wcstring &path, parser_t &parser);
+    static void perform_autoload(const wcstring &path, const parser_t &parser);
 
     /// Mark that a command previously returned from path_to_autoload is finished autoloading.
     void mark_autoload_finished(const wcstring &cmd) {
@@ -109,6 +108,7 @@ class autoload_t {
 
 /// FFI helpers.
 std::unique_ptr<autoload_t> make_autoload_ffi(wcstring env_var_name);
-void perform_autoload_ffi(const wcstring &path, parser_t &parser);
+void perform_autoload_ffi(const wcstring &path, const parser_t &parser);
 
+#endif
 #endif

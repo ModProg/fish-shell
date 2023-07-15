@@ -1,3 +1,8 @@
+#if INCLUDE_RUST_HEADERS
+#include "function.rs.h"
+#endif
+
+#if 0
 // Prototypes for functions for storing and retrieving function information. These functions also
 // take care of autoloading functions in the $fish_function_path. Actual function evaluation is
 // taken care of by the parser and to some degree the builtin handling library.
@@ -9,6 +14,7 @@
 
 struct function_properties_t;
 class parser_t;
+#include "parser.h"
 
 #if INCLUDE_RUST_HEADERS
 #include "function.rs.h"
@@ -16,6 +22,7 @@ class parser_t;
 
 maybe_t<rust::Box<function_properties_t>> function_get_props(const wcstring &name);
 maybe_t<rust::Box<function_properties_t>> function_get_props_autoload(const wcstring &name,
-                                                                      parser_t &parser);
+                                                                      const parser_t &parser);
 
+#endif
 #endif

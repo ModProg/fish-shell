@@ -622,8 +622,7 @@ void completer_t::complete_cmd_desc(const wcstring &str) {
 /// Returns a description for the specified function, or an empty string if none.
 static wcstring complete_function_desc(const wcstring &fn) {
     if (auto props = function_get_props(fn)) {
-        std::unique_ptr<wcstring> desc = (*props)->get_description();
-        return std::move(*desc);
+        return props->description;
     }
     return wcstring{};
 }
@@ -660,9 +659,8 @@ void completer_t::complete_cmd(const wcstring &str_cmd) {
 
     if (str_cmd.empty() || (str_cmd.find(L'/') == wcstring::npos && str_cmd.at(0) != L'~')) {
         bool include_hidden = !str_cmd.empty() && str_cmd.at(0) == L'_';
-        wcstring_list_ffi_t names{};
-        function_get_names(include_hidden, names);
-        for (wcstring &name : names.vals) {
+        std::vector<wcstring> names = function_get_names(include_hidden);
+        for (wcstring &name : names) {
             // Append all known matching functions
             append_completion(&possible_comp, std::move(name));
         }
@@ -1168,11 +1166,11 @@ bool completer_t::complete_variable(const wcstring &str, size_t start_offset) {
                 // $history can be huge, don't put all of it in the completion description; see
                 // #6288.
                 if (env_name == L"history") {
-                    std::shared_ptr<history_t> history =
-                        history_t::with_name(history_session_id(ctx.vars));
-                    for (size_t i = 1; i < history->size() && desc.size() < 64; i++) {
+                    HistorySharedPtr &history =
+                        *history_with_name(history_session_id(ctx.vars));
+                    for (size_t i = 1; i < history.size() && desc.size() < 64; i++) {
                         if (i > 1) desc += L' ';
-                        desc += expand_escape_string(history->item_at_index(i).str());
+                        desc += expand_escape_string(*(*history.item_at_index(i)).str());
                     }
                 } else {
                     // Can't use ctx.vars here, it could be any variable.
@@ -1960,8 +1958,4 @@ std::vector<wcstring> complete_get_wrap_targets(const wcstring &command) {
     auto iter = wraps.find(command);
     if (iter == wraps.end()) return {};
     return iter->second;
-}
-
-wcstring_list_ffi_t complete_get_wrap_targets_ffi(const wcstring &command) {
-    return complete_get_wrap_targets(command);
 }

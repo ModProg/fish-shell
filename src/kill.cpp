@@ -19,3 +19,5 @@ std::vector<wcstring> kill_entries() {
     kill_entries(entries);
     return std::move(entries.vals);
 }
+
+wcstring_list_ffi_t kill_entries_ffi() { return kill_entries(); }

@@ -1,3 +1,4 @@
+#if 0                // todo!
 // Functions used for implementing the complete builtin.
 #include "config.h"  // IWYU pragma: keep
 
@@ -117,16 +118,16 @@ static void builtin_complete_remove(const std::vector<wcstring> &cmds,
     }
 }
 
-static void builtin_complete_print(const wcstring &cmd, io_streams_t &streams, parser_t &parser) {
+static void builtin_complete_print(const wcstring &cmd, io_streams_t &streams, const parser_t &parser) {
     const wcstring repr = complete_print(cmd);
 
     // colorize if interactive
     if (!streams.out_is_redirected && isatty(STDOUT_FILENO)) {
         std::vector<highlight_spec_t> colors;
-        highlight_shell(repr, colors, parser.context());
-        streams.out.append(str2wcstring(colorize(repr, colors, parser.vars())));
+        highlight_shell(repr, colors, *rust::Box<OperationContext>::from_raw(parser.context()));
+        streams.out()->append(str2wcstring(colorize(repr, colors, parser.vars())));
     } else {
-        streams.out.append(repr);
+        streams.out()->append(repr);
     }
 }
 
@@ -136,7 +137,7 @@ enum {
 };
 /// The complete builtin. Used for specifying programmable tab-completions. Calls the functions in
 // complete.cpp for any heavy lifting.
-maybe_t<int> builtin_complete(parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
+maybe_t<int> builtin_complete(const parser_t &parser, io_streams_t &streams, const wchar_t **argv) {
     const wchar_t *cmd = argv[0];
     int argc = builtin_count_args(argv);
     completion_mode_t result_mode{};
@@ -215,7 +216,7 @@ maybe_t<int> builtin_complete(parser_t &parser, io_streams_t &streams, const wch
                     else
                         cmd_to_complete.push_back(*tmp);
                 } else {
-                    streams.err.append_format(_(L"%ls: Invalid token '%ls'\n"), cmd, w.woptarg);
+                    streams.err()->append(format_string(_(L"%ls: Invalid token '%ls'\n"), cmd, w.woptarg));
                     return STATUS_INVALID_ARGS;
                 }
                 break;
@@ -236,7 +237,7 @@ maybe_t<int> builtin_complete(parser_t &parser, io_streams_t &streams, const wch
             case 's': {
                 short_opt.append(w.woptarg);
                 if (w.woptarg[0] == '\0') {
-                    streams.err.append_format(_(L"%ls: -s requires a non-empty string\n"), cmd);
+                    streams.err()->append(format_string(_(L"%ls: -s requires a non-empty string\n"), cmd));
                     return STATUS_INVALID_ARGS;
                 }
                 break;
@@ -244,7 +245,7 @@ maybe_t<int> builtin_complete(parser_t &parser, io_streams_t &streams, const wch
             case 'l': {
                 gnu_opt.push_back(w.woptarg);
                 if (w.woptarg[0] == '\0') {
-                    streams.err.append_format(_(L"%ls: -l requires a non-empty string\n"), cmd);
+                    streams.err()->append(format_string(_(L"%ls: -l requires a non-empty string\n"), cmd));
                     return STATUS_INVALID_ARGS;
                 }
                 break;
@@ -252,7 +253,7 @@ maybe_t<int> builtin_complete(parser_t &parser, io_streams_t &streams, const wch
             case 'o': {
                 old_opt.push_back(w.woptarg);
                 if (w.woptarg[0] == '\0') {
-                    streams.err.append_format(_(L"%ls: -o requires a non-empty string\n"), cmd);
+                    streams.err()->append(format_string(_(L"%ls: -o requires a non-empty string\n"), cmd));
                     return STATUS_INVALID_ARGS;
                 }
                 break;
@@ -260,7 +261,7 @@ maybe_t<int> builtin_complete(parser_t &parser, io_streams_t &streams, const wch
             case 'S': {
                 subcommand.push_back(w.woptarg);
                 if (w.woptarg[0] == '\0') {
-                    streams.err.append_format(_(L"%ls: -S requires a non-empty string\n"), cmd);
+                    streams.err()->append(format_string(_(L"%ls: -S requires a non-empty string\n"), cmd));
                     return STATUS_INVALID_ARGS;
                 }
                 break;
@@ -313,13 +314,13 @@ maybe_t<int> builtin_complete(parser_t &parser, io_streams_t &streams, const wch
 
     if (result_mode.no_files && result_mode.force_files) {
         if (!have_x) {
-            streams.err.append_format(BUILTIN_ERR_COMBO2, L"complete",
-                                      L"'--no-files' and '--force-files'");
+            streams.err()->append(format_string(BUILTIN_ERR_COMBO2, L"complete",
+                                      L"'--no-files' and '--force-files'"));
         } else {
             // The reason for us not wanting files is `-x`,
             // which is short for `-rf`.
-            streams.err.append_format(BUILTIN_ERR_COMBO2, L"complete",
-                                      L"'--exclusive' and '--force-files'");
+            streams.err()->append(format_string(BUILTIN_ERR_COMBO2, L"complete",
+                                      L"'--exclusive' and '--force-files'"));
         }
         return STATUS_INVALID_ARGS;
     }
@@ -334,7 +335,7 @@ maybe_t<int> builtin_complete(parser_t &parser, io_streams_t &streams, const wch
             // Or use one left-over arg as the command to complete
             cmd_to_complete.push_back(argv[argc - 1]);
         } else {
-            streams.err.append_format(BUILTIN_ERR_TOO_MANY_ARGUMENTS, cmd);
+            streams.err()->append(format_string(BUILTIN_ERR_TOO_MANY_ARGUMENTS, cmd));
             builtin_print_error_trailer(parser, streams.err, cmd);
             return STATUS_INVALID_ARGS;
         }
@@ -345,9 +346,9 @@ maybe_t<int> builtin_complete(parser_t &parser, io_streams_t &streams, const wch
         if (parse_util_detect_errors(condition_string, &*errors)) {
             for (size_t i = 0; i < errors->size(); i++) {
                 wcstring prefix(wcstring(cmd) + L": -n '" + condition_string + L"': ");
-                streams.err.append(*errors->at(i)->describe_with_prefix(
+                streams.err()->append(*errors->at(i)->describe_with_prefix(
                     condition_string, prefix, parser.is_interactive(), false));
-                streams.err.push(L'\n');
+                streams.err()->push(L'\n');
             }
             return STATUS_CMD_ERROR;
         }
@@ -359,9 +360,9 @@ maybe_t<int> builtin_complete(parser_t &parser, io_streams_t &streams, const wch
         prefix.append(L": ");
 
         if (maybe_t<wcstring> err_text = parse_util_detect_errors_in_argument_list(comp, prefix)) {
-            streams.err.append_format(L"%ls: %ls: contains a syntax error\n", cmd, comp);
-            streams.err.append(*err_text);
-            streams.err.push(L'\n');
+            streams.err()->append(format_string(L"%ls: %ls: contains a syntax error\n", cmd, comp));
+            streams.err()->append(*err_text);
+            streams.err()->push(L'\n');
             return STATUS_CMD_ERROR;
         }
     }
@@ -385,22 +386,23 @@ maybe_t<int> builtin_complete(parser_t &parser, io_streams_t &streams, const wch
 
         // Create a scoped transient command line, so that builtin_commandline will see our
         // argument, not the reader buffer.
-        parser.libdata().transient_commandlines.push_back(do_complete_param);
-        cleanup_t remove_transient([&] { parser.libdata().transient_commandlines.pop_back(); });
+        parser.libdata_mut().transient_commandlines_push(do_complete_param);
+        cleanup_t remove_transient([&] { parser.libdata_mut().transient_commandlines_pop(); });
 
         // Prevent accidental recursion (see #6171).
-        if (!parser.libdata().builtin_complete_current_commandline) {
+        if (!parser.libdata_pods().builtin_complete_current_commandline) {
             if (!have_do_complete_param) {
-                parser.libdata().builtin_complete_current_commandline = true;
+                parser.libdata_pods_mut().builtin_complete_current_commandline = true;
             }
 
             completion_list_t comp = complete(
                 do_complete_param, completion_request_options_t::normal(), parser.context());
 
             // Apply the same sort and deduplication treatment as pager completions
-            completions_sort_and_prioritize(&comp);
+            comp.sort_and_prioritize();
 
-            for (const auto &next : comp) {
+            for (size_t i = 0; i < comp.size(); i++) {
+                const auto &next = comp.at(i);
                 // Make a fake commandline, and then apply the completion to it.
                 const wcstring faux_cmdline = token;
                 size_t tmp_cursor = faux_cmdline.size();
@@ -431,10 +433,10 @@ maybe_t<int> builtin_complete(parser_t &parser, io_streams_t &streams, const wch
                     faux_cmdline_with_completion.append(next.description);
                 }
                 faux_cmdline_with_completion.push_back(L'\n');
-                streams.out.append(faux_cmdline_with_completion);
+                streams.out()->append(faux_cmdline_with_completion);
             }
 
-            parser.libdata().builtin_complete_current_commandline = false;
+            parser.libdata_pods_mut().builtin_complete_current_commandline = false;
         }
     } else if (path.empty() && gnu_opt.empty() && short_opt.empty() && old_opt.empty() && !remove &&
                !*comp && !*desc && condition.empty() && wrap_targets.empty() &&
@@ -474,3 +476,4 @@ maybe_t<int> builtin_complete(parser_t &parser, io_streams_t &streams, const wch
 
     return STATUS_CMD_OK;
 }
+#endif

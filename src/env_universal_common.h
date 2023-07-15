@@ -15,6 +15,14 @@
 #include "maybe.h"
 #include "wutil.h"
 
+#if INCLUDE_RUST_HEADERS
+#include "env_universal_common.rs.h"
+#endif
+
+// using universal_notifier_t = UniversalNotifierFFI;
+
+#if 0
+
 /// Callback data, reflecting a change in universal variables.
 struct callback_data_t {
     // The name of the variable.
@@ -283,4 +291,5 @@ class universal_notifier_t {
 
 wcstring get_runtime_path();
 
+#endif
 #endif

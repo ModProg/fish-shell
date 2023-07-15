@@ -14,64 +14,51 @@
 
 #include "common.h"
 #include "enum_set.h"
+#include "env.h"
 #include "maybe.h"
+#include "operation_context.h"
 #include "parse_constants.h"
 
-class env_var_t;
-class environment_t;
-class operation_context_t;
-
 /// Set of flags controlling expansions.
-enum class expand_flag {
+enum expand_flag {
     /// Skip command substitutions.
-    skip_cmdsubst,
+    skip_cmdsubst = 1 << 0,
     /// Skip variable expansion.
-    skip_variables,
+    skip_variables = 1 << 1,
     /// Skip wildcard expansion.
-    skip_wildcards,
+    skip_wildcards = 1 << 2,
     /// The expansion is being done for tab or auto completions. Returned completions may have the
     /// wildcard as a prefix instead of a match.
-    for_completions,
+    for_completions = 1 << 3,
     /// Only match files that are executable by the current user.
-    executables_only,
+    executables_only = 1 << 4,
     /// Only match directories.
-    directories_only,
+    directories_only = 1 << 5,
     /// Generate descriptions, stored in the description field of completions.
-    gen_descriptions,
+    gen_descriptions = 1 << 6,
     /// Un-expand home directories to tildes after.
-    preserve_home_tildes,
+    preserve_home_tildes = 1 << 7,
     /// Allow fuzzy matching.
-    fuzzy_match,
+    fuzzy_match = 1 << 8,
     /// Disallow directory abbreviations like /u/l/b for /usr/local/bin. Only applicable if
     /// fuzzy_match is set.
-    no_fuzzy_directories,
+    no_fuzzy_directories = 1 << 9,
     /// Allows matching a leading dot even if the wildcard does not contain one.
     /// By default, wildcards only match a leading dot literally; this is why e.g. '*' does not
     /// match hidden files.
-    allow_nonliteral_leading_dot,
+    allow_nonliteral_leading_dot = 1 << 10,
     /// Do expansions specifically to support cd. This means using CDPATH as a list of potential
     /// working directories, and to use logical instead of physical paths.
-    special_for_cd,
+    special_for_cd = 1 << 11,
     /// Do expansions specifically for cd autosuggestion. This is to differentiate between cd
     /// completions and cd autosuggestions.
-    special_for_cd_autosuggestion,
+    special_for_cd_autosuggestion = 1 << 12,
     /// Do expansions specifically to support external command completions. This means using PATH as
     /// a list of potential working directories.
-    special_for_command,
-
-    COUNT,
+    special_for_command = 1 << 13,
 };
 
-template <>
-struct enum_info_t<expand_flag> {
-    static constexpr auto count = expand_flag::COUNT;
-};
-
-using expand_flags_t = enum_set_t<expand_flag>;
-
-class completion_t;
-using completion_list_t = std::vector<completion_t>;
-class completion_receiver_t;
+using expand_flags_t = uint64_t;
 
 enum : wchar_t {
     /// Character representing a home directory.
@@ -100,6 +87,16 @@ enum : wchar_t {
     EXPAND_SENTINEL
 };
 
+#if INCLUDE_RUST_HEADERS
+#include "expand.rs.h"
+using expand_result_t = ExpandResult;
+#endif
+
+/// The string represented by PROCESS_EXPAND_SELF
+#define PROCESS_EXPAND_SELF_STR L"%self"
+#define PROCESS_EXPAND_SELF_STR_LEN 5
+
+#if 0
 /// These are the possible return values for expand_string.
 struct expand_result_t {
     enum result_t {
@@ -135,10 +132,6 @@ struct expand_result_t {
         return result;
     }
 };
-
-/// The string represented by PROCESS_EXPAND_SELF
-#define PROCESS_EXPAND_SELF_STR L"%self"
-#define PROCESS_EXPAND_SELF_STR_LEN 5
 
 /// Perform various forms of expansion on in, such as tilde expansion (\~USER becomes the users home
 /// directory), variable expansion (\$VAR_NAME becomes the value of the environment variable
@@ -210,4 +203,5 @@ wcstring replace_home_directory_with_tilde(const wcstring &str, const environmen
 // Terrible hacks
 bool fish_xdm_login_hack_hack_hack_hack(std::vector<std::string> *cmds, int argc,
                                         const char *const *argv);
+#endif
 #endif

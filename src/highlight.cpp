@@ -1,3 +1,4 @@
+#if 0                // todo!()
 // Functions for syntax highlighting.
 #include "config.h"  // IWYU pragma: keep
 
@@ -18,7 +19,6 @@
 
 #include "abbrs.h"
 #include "ast.h"
-#include "builtin.h"
 #include "color.h"
 #include "common.h"
 #include "env.h"
@@ -200,7 +200,7 @@ bool is_potential_path(const wcstring &potential_path_fragment, bool at_cursor,
     bool has_magic = false;
 
     wcstring path_with_magic(potential_path_fragment);
-    if (flags & PATH_EXPAND_TILDE) expand_tilde(path_with_magic, ctx.vars);
+    if (flags & PATH_EXPAND_TILDE) expand_tilde(path_with_magic, ctx.vars());
 
     for (auto c : path_with_magic) {
         switch (c) {
@@ -309,8 +309,9 @@ static bool is_potential_cd_path(const wcstring &path, bool at_cursor,
         directories.push_back(working_directory);
     } else {
         // Get the CDPATH.
-        auto cdpath = ctx.vars.get_unless_empty(L"CDPATH");
-        std::vector<wcstring> pathsv = !cdpath ? std::vector<wcstring>{L"."} : cdpath->as_list();
+        auto cdpath = ctx.vars().get_unless_empty(L"CDPATH");
+        std::vector<wcstring> pathsv =
+            !cdpath ? std::vector<wcstring>{L"."} : cdpath->as_list()->vals;
         // The current $PWD is always valid.
         pathsv.push_back(L".");
 
@@ -324,18 +325,6 @@ static bool is_potential_cd_path(const wcstring &path, bool at_cursor,
     // Call is_potential_path with all of these directories.
     return is_potential_path(path, at_cursor, directories, ctx,
                              flags | PATH_REQUIRE_DIR | PATH_FOR_CD);
-}
-
-// Given a plain statement node in a parse tree, get the command and return it, expanded
-// appropriately for commands. If we succeed, return true.
-static bool statement_get_expanded_command(const wcstring &src,
-                                           const ast::decorated_statement_t &stmt,
-                                           const operation_context_t &ctx, wcstring *out_cmd) {
-    // Get the command. Try expanding it. If we cannot, it's an error.
-    maybe_t<wcstring> cmd = stmt.command().source(src);
-    if (!cmd) return false;
-    expand_result_t err = expand_to_command_and_args(*cmd, ctx, out_cmd, nullptr);
-    return err == expand_result_t::ok;
 }
 
 rgb_color_t highlight_color_resolver_t::resolve_spec_uncached(const highlight_spec_t &highlight,
@@ -423,8 +412,10 @@ static void autosuggest_parse_command(const wcstring &buff, const operation_cont
         first_statement = jc->job().statement().contents().ptr()->try_as_decorated_statement();
     }
 
-    if (first_statement &&
-        statement_get_expanded_command(buff, *first_statement, ctx, out_expanded_command)) {
+    if (!first_statement) return;
+
+    if (auto s = statement_get_expanded_command(buff, *first_statement, ctx)) {
+        *out_expanded_command = std::move(*s);
         // Check if the first argument or redirection is, in fact, an argument.
         if (const auto *arg_or_redir = first_statement->args_or_redirs().at(0)) {
             if (arg_or_redir && arg_or_redir->is_argument()) {
@@ -442,7 +433,7 @@ bool autosuggest_validate_from_history(const history_item_t &item,
     // Parse the string.
     wcstring parsed_command;
     wcstring cd_dir;
-    autosuggest_parse_command(item.str(), ctx, &parsed_command, &cd_dir);
+    autosuggest_parse_command(*item.str(), ctx, &parsed_command, &cd_dir);
 
     // This is for autosuggestions which are not decorated commands, e.g. function declarations.
     if (parsed_command.empty()) {
@@ -451,7 +442,7 @@ bool autosuggest_validate_from_history(const history_item_t &item,
 
     // We handle cd specially.
     if (parsed_command == L"cd" && !cd_dir.empty()) {
-        if (expand_one(cd_dir, expand_flag::skip_cmdsubst, ctx)) {
+        if (expand_one(cd_dir, expand_flag::skip_cmdsubst, ctx, nullptr)) {
             if (string_prefixes_string(cd_dir, L"--help") ||
                 string_prefixes_string(cd_dir, L"-h")) {
                 // cd --help is always valid.
@@ -459,7 +450,7 @@ bool autosuggest_validate_from_history(const history_item_t &item,
             } else {
                 // Check the directory target, respecting CDPATH.
                 // Permit the autosuggestion if the path is valid and not our directory.
-                auto path = path_get_cdpath(cd_dir, working_directory, ctx.vars);
+                auto path = path_get_cdpath(cd_dir, working_directory, ctx.vars());
                 return path && !paths_are_same_file(working_directory, *path);
             }
         }
@@ -467,13 +458,14 @@ bool autosuggest_validate_from_history(const history_item_t &item,
 
     // Not handled specially. Is the command valid?
     bool cmd_ok = builtin_exists(parsed_command) || function_exists_no_autoload(parsed_command) ||
-                  path_get_path(parsed_command, ctx.vars).has_value();
+                  path_get_path(parsed_command, ctx.vars()).has_value();
     if (!cmd_ok) {
         return false;
     }
 
     // Did the historical command have arguments that look like paths, which aren't paths now?
-    if (!all_paths_are_valid(item.get_required_paths(), ctx)) {
+    path_list_t paths = item.get_required_paths()->vals;
+    if (!all_paths_are_valid(paths, ctx)) {
         return false;
     }
 
@@ -971,7 +963,7 @@ void highlighter_t::visit_argument(const void *arg_, bool cmd_is_cd, bool option
     if (cmd_is_cd) {
         // Mark this as an error if it's not 'help' and not a valid cd path.
         wcstring param = *arg.source(this->buff);
-        if (expand_one(param, expand_flag::skip_cmdsubst, ctx)) {
+        if (expand_one(param, expand_flag::skip_cmdsubst, ctx, nullptr)) {
             bool is_help =
                 string_prefixes_string(param, L"--help") || string_prefixes_string(param, L"-h");
             if (!is_help) {
@@ -1027,10 +1019,12 @@ void highlighter_t::visit_decorated_statement(const void *stmt_) {
     } else {
         // Check to see if the command is valid.
         // Try expanding it. If we cannot, it's an error.
-        bool expanded = statement_get_expanded_command(buff, stmt, ctx, &expanded_cmd);
-        if (expanded && !has_expand_reserved(expanded_cmd)) {
-            is_valid_cmd =
-                command_is_valid(expanded_cmd, stmt.decoration(), working_directory, ctx.vars);
+        if (auto expanded = statement_get_expanded_command(buff, stmt, ctx)) {
+            expanded_cmd = *expanded;
+            if (!has_expand_reserved(expanded_cmd)) {
+                is_valid_cmd = command_is_valid(expanded_cmd, stmt.decoration(), working_directory,
+                                                ctx.vars());
+            }
         }
     }
 
@@ -1135,7 +1129,7 @@ void highlighter_t::visit_redirection(const void *redir_) {
             target_is_valid = true;
         } else if (contains_pending_variable(this->pending_variables, target)) {
             target_is_valid = true;
-        } else if (!expand_one(target, expand_flag::skip_cmdsubst, ctx)) {
+        } else if (!expand_one(target, expand_flag::skip_cmdsubst, ctx, nullptr)) {
             // Could not be expanded.
             target_is_valid = false;
         } else {
@@ -1314,13 +1308,15 @@ std::string colorize(const wcstring &text, const std::vector<highlight_spec_t> &
 
 void highlight_shell(const wcstring &buff, std::vector<highlight_spec_t> &color,
                      const operation_context_t &ctx, bool io_ok, maybe_t<size_t> cursor) {
-    const wcstring working_directory = ctx.vars.get_pwd_slash();
+    const wcstring working_directory = std::move(*ctx.vars().get_pwd_slash());
     highlighter_t highlighter(buff, cursor, ctx, working_directory, io_ok);
     color = highlighter.highlight();
 }
 
-wcstring colorize_shell(const wcstring &text, parser_t &parser) {
+wcstring colorize_shell(const wcstring &text, void *parser_) {
+    const parser_t &parser = *static_cast<parser_t *>(parser_);
     std::vector<highlight_spec_t> colors;
-    highlight_shell(text, colors, parser.context());
+    highlight_shell(text, colors, *rust::Box<OperationContext>::from_raw(parser.context()));
     return str2wcstring(colorize(text, colors, parser.vars()));
 }
+#endif

@@ -97,33 +97,20 @@ if(CMAKE_SYSTEM_NAME STREQUAL NetBSD)
   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 endif()
 
-# List of sources for builtin functions.
-set(FISH_BUILTIN_SRCS
-    src/builtin.cpp src/builtins/bind.cpp
-    src/builtins/commandline.cpp src/builtins/complete.cpp
-    src/builtins/disown.cpp
-    src/builtins/eval.cpp src/builtins/fg.cpp
-    src/builtins/functions.cpp src/builtins/history.cpp
-    src/builtins/jobs.cpp src/builtins/path.cpp
-    src/builtins/read.cpp src/builtins/set.cpp
-    src/builtins/source.cpp
-    src/builtins/string.cpp src/builtins/ulimit.cpp
-)
-
 # List of other sources.
 set(FISH_SRCS
-    src/ast.cpp src/autoload.cpp src/color.cpp src/common.cpp src/complete.cpp
-    src/env.cpp src/env_universal_common.cpp src/event.cpp
-    src/exec.cpp src/expand.cpp src/fallback.cpp src/fish_indent_common.cpp src/fish_version.cpp
-    src/flog.cpp src/function.cpp src/highlight.cpp
-    src/history.cpp src/history_file.cpp src/input.cpp src/input_common.cpp
+    src/ast.cpp src/common.cpp
+    src/event.cpp
+    src/fallback.cpp src/fish_indent_common.cpp src/fish_version.cpp
+    src/flog.cpp src/highlight.cpp
+    src/history_file.cpp src/input.cpp src/input_common.cpp
     src/io.cpp src/kill.cpp
-    src/null_terminated_array.cpp src/operation_context.cpp src/output.cpp
-    src/pager.cpp src/parse_execution.cpp src/parse_util.cpp
-    src/parser.cpp src/parser_keywords.cpp src/path.cpp src/postfork.cpp
-    src/proc.cpp src/re.cpp src/reader.cpp src/screen.cpp
+    src/null_terminated_array.cpp src/output.cpp
+    src/pager.cpp src/parse_util.cpp
+    src/path.cpp
+    src/re.cpp src/reader.cpp src/screen.cpp
     src/signals.cpp src/utf8.cpp
-    src/wcstringutil.cpp src/wgetopt.cpp src/wildcard.cpp
+    src/wcstringutil.cpp src/wgetopt.cpp
     src/wutil.cpp src/fds.cpp src/rustffi.cpp
 )
 
@@ -181,7 +168,7 @@ function(FISH_LINK_DEPS_AND_SIGN target)
 endfunction(FISH_LINK_DEPS_AND_SIGN)
 
 # Define libfish.a.
-add_library(fishlib STATIC ${FISH_SRCS} ${FISH_BUILTIN_SRCS})
+add_library(fishlib STATIC ${FISH_SRCS})
 target_sources(fishlib PRIVATE ${FISH_HEADERS})
 target_link_libraries(fishlib
   fish-rust

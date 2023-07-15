@@ -12,24 +12,23 @@
 #include <utility>
 #include <vector>
 
-#include "common.h"
-#include "cxx.h"
-#include "env.h"
-#include "event.h"
-#include "expand.h"
-#include "maybe.h"
-#include "operation_context.h"
-#include "parse_constants.h"
-#include "parse_tree.h"
-#include "proc.h"
-#include "util.h"
-#include "wait_handle.h"
+struct Parser;
+
+#if INCLUDE_RUST_HEADERS
+#include "parser.rs.h"
+#else
+struct JobListFfi;
+#endif
+
+using parser_t = Parser;
+
+#if 0
 
 class autoclose_fd_t;
 class io_chain_t;
 struct Event;
 struct job_group_t;
-class parser_t;
+struct parser_t;
 
 /// Types of blocks.
 enum class block_type_t : uint8_t {
@@ -258,7 +257,7 @@ enum class parser_status_var_t : uint8_t {
     count_,
 };
 
-class parser_t : public std::enable_shared_from_this<parser_t> {
+struct parser_t : public std::enable_shared_from_this<parser_t> {
     friend class parse_execution_context_t;
 
    private:
@@ -315,10 +314,10 @@ class parser_t : public std::enable_shared_from_this<parser_t> {
    public:
     // No copying allowed.
     parser_t(const parser_t &) = delete;
-    parser_t &operator=(const parser_t &) = delete;
+    const parser_t &operator=(const parser_t &) = delete;
 
     /// Get the "principal" parser, whatever that is.
-    static parser_t &principal_parser();
+    static const parser_t &principal_parser();
 
     /// ffi helper. Obviously this is totally bogus.
     static parser_t *principal_parser_ffi();
@@ -397,8 +396,6 @@ class parser_t : public std::enable_shared_from_this<parser_t> {
     /// Get the variables.
     env_stack_t &vars() { return *variables; }
     const env_stack_t &vars() const { return *variables; }
-
-    int remove_var_ffi(const wcstring &key, int mode) { return vars().remove(key, mode); }
 
     /// Get the library data.
     library_data_t &libdata() { return library_data; }
@@ -488,12 +485,8 @@ class parser_t : public std::enable_shared_from_this<parser_t> {
     /// Mark whether we should sync universal variables.
     void set_syncs_uvars(bool flag) { syncs_uvars_ = flag; }
 
-    /// Set the given file descriptor as the working directory for this parser.
-    /// This acquires ownership.
-    void set_cwd_fd(int fd);
-
     /// \return a shared pointer reference to this parser.
-    std::shared_ptr<parser_t> shared();
+    ParserRef shared();
 
     /// \return a cancel poller for checking if this parser has been signalled.
     /// autocxx falls over with this so hide it.
@@ -511,7 +504,7 @@ class parser_t : public std::enable_shared_from_this<parser_t> {
     RustFFIJobList ffi_jobs() const;
     library_data_pod_t *ffi_libdata_pod();
     job_t *ffi_job_get_from_pid(int pid) const;
-    const library_data_pod_t &ffi_libdata_pod_const() const;
+    const library_data_pod_t &ffi_libdata_pods_const() const;
 
     /// autocxx junk.
     bool ffi_has_funtion_block() const;
@@ -526,5 +519,7 @@ class parser_t : public std::enable_shared_from_this<parser_t> {
 
     ~parser_t();
 };
+
+#endif
 
 #endif
